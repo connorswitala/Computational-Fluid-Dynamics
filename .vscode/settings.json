@@ -1,0 +1,18 @@
+{
+    "files.associations": {
+        "iomanip": "cpp",
+        "chrono": "cpp",
+        "fstream": "cpp",
+        "iosfwd": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "vector": "cpp",
+        "array": "cpp",
+        "list": "cpp",
+        "unordered_map": "cpp",
+        "string_view": "cpp",
+        "format": "cpp",
+        "initializer_list": "cpp",
+        "span": "cpp"
+    }
+}

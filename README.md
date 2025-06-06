@@ -18,7 +18,7 @@ from a newly solved equilibirum temperature that accounts for translational, rot
 
 ## Perfect Gas Solver
 
-Running the program solve_perf_gas will bring up an option to use a preset case and set your own case. Entering "preset" will run the case that is set up in perfgassolver/main.cpp. Using "set" will run
+Running the program solve_perf_gas will bring up an option to use a preset case or set your own case. Entering "preset" will run the case that is set up in perfgassolver/main.cpp. Using "set" will run
 you through a list of steps to set up the solver. It outputs a .dat file for plotting in Tecplot or Matlab. (Maybe Paraview as well, but I haven't tried it.)
 
 ## Real Gas Solver

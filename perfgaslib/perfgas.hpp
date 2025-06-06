@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../writefilelib/writefile.hpp" 
-#include "../linalglib/linalg.hpp" 
 #include <chrono> 
 #include <iomanip>
 
@@ -109,7 +108,6 @@ inline Viscous_State compute_viscous_state(const Vector& U, double nx, double ny
 	return S;
 }
 
-
 Vector primtoCons(const Vector& V);
 Vector constoPrim(const Vector& U);
 
@@ -149,6 +147,7 @@ public:
 	void solve_inviscid_timestep();
 	void solve_viscous_timestep();
 	void compute_dt();
+	void compute_ghost_cells(); 
 	void compute_inviscid_jacobians();
 	void compute_viscous_jacobians();
 

@@ -22,93 +22,59 @@ double NewtonMethod(double max_dist, int n_points, double d_min) {
 ///////////// Ramp Grid functions ///////////////
 /////////////////////////////////////////////////
 
-RampGrid::RampGrid(int Nx, int Ny, double L1, double L2, double L3, double inlet_height, double ramp_angle)
-	: Nx(Nx), Ny(Ny), l1(L1), L2(L2), L3(L3), inlet_height(inlet_height), ramp_angle(ramp_angle),
+RampGrid::RampGrid(int Nx, int Ny, double L, double inlet_height, double ramp_angle)
+	: Nx(Nx), Ny(Ny), L(L), inlet_height(inlet_height), ramp_angle(ramp_angle), 
 	vertices(Nx + 1, vector<Point>(Ny + 1)), cellCenters(Nx, vector<Point>(Ny)),
 	cellVolumes(Nx, vector<double>(Ny)), iAreas(Nx + 1, vector<double>(Ny)), jAreas(Nx, vector<double>(Ny + 1)),
 	iNormals(Nx + 1, vector<Point>(Ny)), jNormals(Nx, vector<Point>(Ny + 1)) {
 
-	int i, j;
+		int i,j;
+		double dx = L / Nx;
+		double theta_rad = ramp_angle * M_PI / 180.0;
+		double slope = tan(theta_rad);
+		double ramp_start_x = L / 3.0;
+		double ramp_start_y = 0.0; 
+		double ramp_end_x = 2.0 * L / 3.0;
+		double ramp_length = ramp_end_x - ramp_start_x;
+		double ramp_end_y = slope * ramp_length;  // height at end of ramp
 
+		for (int i = 0; i <= Nx; ++i) {
+			double x = i * dx;
+			double y_bot, y_top;
 
-	// Important constants
-	double deg_to_rads = 3.141592653 / 180.0;
-	double ang_rads = ramp_angle * deg_to_rads;
-	double min_height = L2 * tan(ang_rads) / 0.9;
+			y_top = inlet_height;
 
-	// Checks that inlet height is tall enough for ramp section
-	if (inlet_height < min_height) {
-		cout << "Ramp angle is too large for inlet height, please input an inlet height larger than " << min_height << endl;
-		cin >> inlet_height;
-	}
-
-	// Define lengths 
-	double L_total = L1 + L2 + L3;
-	double dx = L_total / (Nx + 1);
-	double dy = inlet_height / (Ny + 1);
-	double L, dy_ramp;
-
-	// Create x vertices
-	for (i = 0; i <= Nx; ++i) {
-		for (j = 0; j <= Ny; ++j) {
-			vertices[i][j].x = i * dx;
-		}
-	}
-
-	// Snap x-vertices to important boundary points.
-	for (i = 0; i <= Nx; ++i) {
-		for (j = 0; j <= Ny; ++j) {
-			if (vertices[i][j].x > L1 && vertices[i][j].x < L1 + dx) {
-				vertices[i][j].x = L1;
+			if (x <= ramp_start_x) {
+				y_bot = 0.0;
+			} else if (x <= ramp_end_x) {
+				double x_rel = x - ramp_start_x;
+				y_bot = slope * x_rel;
+			} else {
+				y_bot = ramp_end_y;
 			}
-			else if (vertices[i][j].x > L1 + L2 && vertices[i][j].x < L1 + L2 + dx) {
-				vertices[i][j].x = L1 + L2;
-			}
-			else if (i == Nx) {
-				vertices[i][j].x = L_total;
-			}
-		}
-	}
 
+			for (int j = 0; j <= Ny; ++j) {
+				
+				double frac = static_cast<double>(j) / Ny;
+				
+				vertices[i][j].x = x; 
+				vertices[i][j].y = y_bot + frac * (y_top - y_bot);
 
-	// Create grid.
-	for (i = 0; i <= Nx; ++i) {
-		L = vertices[i][0].x;
+				if ( (x < L / 3.0) && (x + dx > L / 3.0) ) { 
+					vertices[i][j].x = ramp_start_x; 
+					vertices[i][j].y = ramp_start_y + frac * (y_top - ramp_start_y); 
+				}
 
-		// y vertices for section 1
-		if (L <= L1) {
-			dy = inlet_height / (Ny + 1);
-			for (j = 0; j <= Ny; ++j) {
-				vertices[i][j].y = j * dy;
+				if ( (x < 2 * L / 3.0) && (x + dx > 2 * L / 3.0) ) {
+					vertices[i][j].x = ramp_end_x; 
+					vertices[i][j].y = ramp_end_y + frac * (y_top - ramp_end_y); 
+				}
+				
 			}
 		}
 
-		// y vertices for section 2
-		else if ((L > L1) && (L <= (L1 + L2))) {
 
-			// Changes dy based on section
-			if (L >= L1 && L < L1 + L2 + dx)  dy_ramp = (vertices[i][0].x - vertices[i - 1][0].x) * tan(ang_rads);
-
-			if (L == L1 + L2) dy_ramp = (vertices[i][0].x - vertices[i - 1][0].x) * tan(ang_rads);
-
-			vertices[i][0].y = vertices[i - 1][0].y + dy_ramp;
-			dy = (inlet_height - vertices[i][0].y) / (Ny + 1);
-
-			for (j = 1; j <= Ny; ++j) {
-				vertices[i][j].y = vertices[i][0].y + j * dy;
-			}
-		}
-
-		// y vertives for section 3
-		else {
-			vertices[i][0].y = L2 * tan(ang_rads);
-			dy = (inlet_height - L2 * tan(ang_rads)) / (Ny + 1);
-
-			for (j = 1; j <= Ny; ++j) {
-				vertices[i][j].y = L2 * tan(ang_rads) + j * dy;
-			}
-		}
-	}
+	
 
 	// Edge vectors
 	Point AB, BC, CD, DA;

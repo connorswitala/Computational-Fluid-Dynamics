@@ -15,8 +15,6 @@ struct Point {
 
 double NewtonMethod(double max_dist, int n_points, double d_min);
 
-
-
 class Grid {
 public:
     virtual double Volume(int i, int j) const = 0;
@@ -33,11 +31,10 @@ public:
     virtual ~Grid() = default;
 };
 
-
 class RampGrid : public Grid {
 private:
     int Nx, Ny;
-    double l1, L2, L3, inlet_height, ramp_angle;
+    double L, inlet_height, ramp_angle;
 
     vector<vector<Point>> vertices;
     vector<vector<Point>> cellCenters;
@@ -46,7 +43,7 @@ private:
     vector<vector<double>> iAreas, jAreas, cellVolumes;
 
 public:
-    RampGrid(int Nx, int Ny, double L1, double L2, double L3, double inlet_height, double ramp_angle);
+    RampGrid(int Nx, int Ny, double L, double inlet_height, double ramp_angle);
 
     double Volume(int i, int j) const override;
     Point Center(int i, int j) const override;
@@ -81,7 +78,6 @@ public:
     Point jNorms(int i, int j) const override;
 
 };
-
 
 class FlatPlateGrid : public Grid {
 private:
@@ -130,7 +126,6 @@ public:
     Point iNorms(int i, int j) const override;
     Point jNorms(int i, int j) const override;
 };
-
 
 class MirroredGrid : public Grid {
 private:

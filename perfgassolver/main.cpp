@@ -52,9 +52,9 @@ int main() {
 		cout << "\033[36mCFL (try to keep at or below 5.0): \033[0m";	cin >> CFL; cout << endl;
 
 		if (grid_type == "ramp") {
-			cout << "\033[31mInlet section length: \033[0m"; cin >> l1;  cout << "\033[31mRamp section length: \033[0m"; cin >> l2; cout << "\033[31mOutlet section length: \033[0m"; cin >> l3;
-			cout << "\033[31mDomain height: \033[0m"; cin >> l4; cout << "\033[31mRamp angle (in degrees): \033[0m"; cin >> theta1;
-			gridg = make_unique<RampGrid>(Nx, Ny, l1, l2, l3, l4, theta1);
+			cout << "\033[31mLength: \033[0m"; cin >> l1;
+			cout << "\033[31mDomain height: \033[0m"; cin >> l2; cout << "\033[31mRamp angle (in degrees): \033[0m"; cin >> theta1;
+			gridg = make_unique<RampGrid>(Nx, Ny, l1, l2, theta1);
 		}
 
 		if (grid_type == "cylinder") {
@@ -110,22 +110,23 @@ int main() {
 	else if (preset == "preset") {
 	
 
-		INLET.p = 10000.0,						// Inlet Pressure (SET)
-			INLET.T = 300,						// Inlet Temperature (SET)
-			INLET.M = 2.5,							// Inlet Mach speed (SET)
-			INLET.a = sqrt(gam * R * INLET.T),	// Inlet Sound Speed
+		INLET.p = 900.0,							// Inlet Pressure (SET)
+			INLET.T = 226.15,						// Inlet Temperature (SET)
+			INLET.M = 20,							// Inlet Mach speed (SET)
+			INLET.a = sqrt(gam * R * INLET.T),		// Inlet Sound Speed
 			INLET.u = INLET.M * INLET.a,			// Inlet u-velocity
 			INLET.v = 0,							// Inlet v-velocity
-			INLET.rho = INLET.p/(R * INLET.T);	// Inlet density
+			INLET.rho = 0.01388;					// Inlet density
+			// INLET.rho = INLET.p/(R * INLET.T);
 
 		int progress_update = 50;  // This number prints a status update after the number of iterations declared here. 
-		const int Nx = 50, Ny = 25;
+		const int Nx = 200, Ny = 100;
 		CFL = 1.0; 
-		BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry);     
-		RampGrid grid(Nx, Ny, 1, 1, 1, 0.65, 15);  
+		// BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry);     
+		// RampGrid grid(Nx, Ny, 3, 3, 20);  
 
-		// BoundaryConditions BCs(BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry, BoundaryCondition::Inlet);
-		// CylinderGrid grid(Nx, Ny, 0.1, 0.3, 0.45, 0.001, pi, 3 * pi / 2);
+		BoundaryConditions BCs(BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry, BoundaryCondition::Inlet);
+		CylinderGrid grid(Nx, Ny, 0.1, 0.3, 0.45, 0.001, pi, 3 * pi / 2);
 
 		//BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::IsothermalWall, BoundaryCondition::Symmetry);   
 		//FlatPlateGrid grid(Nx, Ny, 1e-3, 1e-3, 5e-6);  
@@ -150,12 +151,5 @@ int main() {
 		cout << "Unknown solver type";
 	}
 
-	cout << endl << "\033[36mBring newly created '.csv' file into Paraview for plotting. -> Click on the file in the pipeline. \nAt top of screen click Filters -> Alphabetical -> Tables to Points." << endl
-		<< "Change x, y, and z column in properties to x, y, and z - points in dropdown. \nClick on Table to Points in pipeline. \nClick Filters -> Alphabetical -> Delauney2D \nIn properties section, change from surface to points." << endl
-		<< "In coloring change to whatever property you want to view and click the little broken link square next to the Edit button. You can click edit to change coloring scheme. \033[0m";
-
-
-
-	system("pause");
 	return 0;
 }

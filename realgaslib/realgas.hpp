@@ -1,10 +1,8 @@
 #pragma once
 
-#include "../LinearAlgebra/linear_algebra.hpp"
-#include "../GridGenerator/grid_generator.hpp" 
+#include "../writefilelib/writefile.hpp"
 #include <cstdlib>
 #include <fstream> 
-#include <omp.h>
 #include <chrono> 
 #include <iomanip>
 #include <sstream>
@@ -21,10 +19,6 @@ constexpr double Ru = 8314;
 constexpr double Pr = 0.71;
 constexpr double perfgam = 1.4;
 constexpr double perfR = 287.0;
-
-struct ThermoEntry {
-	double rho, e, p, T, R, cv, gam, dpdrho, dpde;
-};
 
 ThermoEntry operator*(const double& s, const ThermoEntry& A);
 
@@ -44,7 +38,7 @@ inline double computeTemperature(const Vector& U, ThermoEntry& Thermo) {
 }
 inline double computeSoundSpeed(ThermoEntry& Thermo) {
 
-	return sqrt(Thermo.gam * Thermo.R * Thermo.T);
+	return sqrt(Thermo.gamma * Thermo.R * Thermo.T);
 }
 
 enum class BoundaryCondition {
@@ -156,8 +150,6 @@ public:
 	void compute_inner_residual();
 	void compute_outer_residual();
 
-	void write_2d_csv(const string& filename);
-	void write_1d_csv(const string& filename);
 	void write_residual_csv();
 
 

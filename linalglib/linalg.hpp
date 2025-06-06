@@ -68,4 +68,4 @@ Vector operator/(const Vector& B, const Matrix& A);
 
 Matrix forwardSubstitution(const Matrix& L, const Matrix& b);
 Matrix backwardSubstitution(const Matrix& U, const Matrix& y);
-Matrix operator/(const Matrix& b, const Matrix& A);
+Matrix operator/(const Matrix& B, const Matrix& A);

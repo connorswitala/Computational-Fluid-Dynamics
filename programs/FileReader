@@ -1,0 +1,26 @@
+
+fid = fopen('../plotfiles/Chemical Equilibrium Inviscid 200x100_Cylinder_Solution.dat');
+% Skip first 2 lines (adjust as needed)
+fgetl(fid);
+fgetl(fid);
+
+data = fscanf(fid, '%f', [8, Inf]);  % 3 columns expected
+data = data';  % transpose to rows
+fclose(fid);
+
+x = data(:,1);
+y = data(:,2);
+rho = data(:,3);
+p = data(:,4);
+t = data(:,5);
+m = data(:,6);
+u = data(:,7);
+v = data(:,8);
+
+
+figure(1); 
+
+contour(x,y,p); 
+grid on;
+xlabel('x');
+ylabel('y');

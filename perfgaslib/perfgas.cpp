@@ -30,7 +30,7 @@ INLET(INLET), grid(grid), BoundaryType(BoundaryType), CFL(CFL), Tw(Tw), progress
   
 	V_inlet = Vector(4); 
 	U_inlet = Vector(4);
-	U = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
+	U = Tensor(Nx + 2, Matrix(Ny + 2, Vector(4, 0.0)));
 	dU_new = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 	dU_old = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 
@@ -61,8 +61,8 @@ INLET(INLET), grid(grid), BoundaryType(BoundaryType), CFL(CFL), Tw(Tw), progress
 
 	U_inlet = primtoCons(V_inlet);
 
-	for (int i = 0; i < Nx; ++i) {
-		for (int j = 0; j < Ny; ++j) {
+	for (int i = 0; i < Nx + 2; ++i) {
+		for (int j = 0; j < Ny + 2; ++j) {
 			U[i][j] = U_inlet;
 		}
 	}
@@ -293,27 +293,47 @@ Vector Solver::viscous_boundary_2D_U(BoundaryCondition type, const Vector& U, co
 void Solver::compute_dt() {
 
 	Vector V(4);
-	double dx, dy, c, dt_old;
-	dt = 1;
+	double c, max_new, max_old, sidesum, l, r, b, t; 
+	max_new = 0.0; max_old = 0.0;
 
 	for (int i = 0; i < Nx; ++i) {
 		for (int j = 0; j < Ny; ++j) {
-			V = constoPrim(U[i][j]);
-			dx = min(grid.jArea(i, j), grid.jArea(i, j + 1));
-			dy = min(grid.iArea(i, j), grid.iArea(i + 1, j));
+			V = constoPrim(U[i + 1][j + 1]);
 			c = sqrt(gam * V[3] / V[0]);
+			
+			l = (fabs(V[1] * grid.iNorms(i, j).x + V[2] * grid.iNorms(i, j).y) + c) * grid.iArea(i, j);   
+			r = (fabs(V[1] * grid.iNorms(i + 1, j).x + V[2] * grid.iNorms(i + 1, j).y) + c) * grid.iArea(i + 1, j);  
+			b = (fabs(V[1] * grid.jNorms(i, j).x + V[2] * grid.jNorms(i, j).y) + c) * grid.jArea(i, j);  
+			t = (fabs(V[1] * grid.jNorms(i, j + 1).x + V[2] * grid.jNorms(i, j + 1).y) + c) * grid.jArea(i, j + 1);  
 
-			dt_old = CFL / (fabs(V[1] / dx) + fabs(V[2] / dy) + c * sqrt(1 / (dx * dx) + 1 / (dy * dy)));
-			if (dt_old < dt) dt = dt_old;
+			sidesum = l + r + b + t;
 
+			max_new = sidesum/(2 * grid.Volume(i,j));    
+			if (max_new >= max_old) max_old = max_new;  
 		}
 	}
+
+	dt = CFL/max_old; 
+}
+
+void Solver::compute_ghost_cells() {
+
+	for (int i = 0; i < Nx; ++i) {
+		U[i + 1][0] = inviscid_boundary_2D_U(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
+		U[i + 1][Ny + 1] = inviscid_boundary_2D_U(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	}
+
+	for (int j = 0; j < Ny; ++j) {
+		U[0][j + 1] = inviscid_boundary_2D_U(BoundaryType.left, U[1][j + 1], grid.iNorms(0, j)); 
+		U[Nx + 1][j + 1] = inviscid_boundary_2D_U(BoundaryType.right, U[Nx][j + 1], grid.iNorms(Nx, j));
+	}
+
 }
 
 void Solver::solve_inviscid() {
 
 	cout << "\033[33mRunning Inviscid DPLR for " << Nx << " by " << Ny << " " << gridtype << " with a CFL of " << fixed << setprecision(2) << CFL << "...\033[0m" << "\n\n";
-	string filename = "Inviscid " + to_string(Nx) + "x" + to_string(Ny) + "_" + gridtype + "_Solution.dat";
+	string filename = "../plotfiles/Inviscid " + to_string(Nx) + "x" + to_string(Ny) + "_" + gridtype + "_Solution.dat";
 
 	auto start = TIME;
 	int counter = 0;
@@ -322,24 +342,23 @@ void Solver::solve_inviscid() {
 	t.push_back(0.0);
 	iteration.push_back(0.0);
 	Global_Residual.push_back(10.0);
-
+	
 	while (outer_residual >= 1e-6) {
-
+	
 		compute_dt();
 
 		solve_inviscid_timestep(); 
-
-		compute_outer_residual();
-		
-
+	
+		compute_outer_residual();		
+	
 		if (counter == 0) outer_residual = 1.0;
 		counter++;
-
+	
 		if (counter % progress_update == 0) {
 			auto end = TIME;
 			DURATION duration = end - start;
 			cout << "Iteration: " << counter << "\t Residual: " << fixed << scientific << setprecision(3) << outer_residual
-				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
+				<< "\t dt = " << fixed << scientific << setprecision(3) << dt << fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
 		}
 
 		if (counter % 1000 == 0) {
@@ -350,7 +369,6 @@ void Solver::solve_inviscid() {
 		t.push_back(t_tot);
 		Global_Residual.push_back(outer_residual);
 		iteration.push_back(counter);
-
 	}
 
 	cfd_contour(Nx, Ny, U, grid, filename); 
@@ -358,14 +376,12 @@ void Solver::solve_inviscid() {
 	auto end = TIME;
 	DURATION duration = end - start;
 	cout << "Program completed in " << duration.count() << " seconds." << endl;
-
-
 }
 
 void Solver::solve_viscous() {
 
 	cout << "\033[33mRunning Viscous DPLR for " << Nx << " by " << Ny << " " << gridtype << " with a CFL of " << fixed << setprecision(2) << CFL << "...\033[0m" << "\n\n";
-	string filename = "Viscous " + to_string(Nx) + "x" + to_string(Ny) + "_" + gridtype + "_Solution.csv";
+	string filename = "plotfile/Viscous " + to_string(Nx) + "x" + to_string(Ny) + "_" + gridtype + "_Solution.csv";
 
 	auto start = TIME;
 	int counter = 0;
@@ -376,9 +392,13 @@ void Solver::solve_viscous() {
 	Global_Residual.push_back(0.0);
 
 	while (outer_residual >= 1e-6) {
+
 		compute_dt();
+
 		solve_viscous_timestep();
+
 		compute_outer_residual();
+
 		if (counter == 0) outer_residual = 1.0;
 		counter++;
 
@@ -387,7 +407,7 @@ void Solver::solve_viscous() {
 			auto end = TIME;
 			DURATION duration = end - start;
 			cout << "Iteration: " << counter << "\t Residual: " << fixed << scientific << setprecision(3) << outer_residual
-				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
+				<< "\t dt = " << fixed << scientific << setprecision(3) << dt << fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
 		}
 
 		if (counter % 1000 == 0) {
@@ -417,6 +437,8 @@ void Solver::solve_viscous_timestep() {
 
 	while (inner_residual >= 1e-8) {
 
+		compute_ghost_cells();
+
 		compute_viscous_jacobians();
 
 		solve_left_line_viscous();
@@ -434,7 +456,7 @@ void Solver::solve_viscous_timestep() {
 	for (int i = 0; i < Nx; ++i) {
 		for (int j = 0; j < Ny; ++j) {
 			for (int k = 0; k < 4; ++k) {
-				U[i][j][k] += dU_old[i][j][k];
+				U[i + 1][j + 1][k] += dU_old[i][j][k];
 			}
 		}
 	}
@@ -445,6 +467,8 @@ void Solver::solve_inviscid_timestep() {
 	inner_residual = 1.0;
 
 	while (inner_residual >= 1e-8) {
+
+		compute_ghost_cells();
 
 		compute_inviscid_jacobians();
 
@@ -463,7 +487,7 @@ void Solver::solve_inviscid_timestep() {
 	for (int i = 0; i < Nx; ++i) {
 		for (int j = 0; j < Ny; ++j) {
 			for (int k = 0; k < 4; ++k) {
-				U[i][j][k] += dU_old[i][j][k];
+				U[i + 1][j + 1][k] += dU_old[i][j][k];
 			}
 		}
 	}
@@ -479,274 +503,15 @@ void Solver::compute_inviscid_jacobians() {
 	pe = (gam - 1);
 	Matrix X(4, Vector(4)), Y(4, Vector(4));
 
-	// Calculate Jacobians and Explicit fluxes for i-faces on left boundary 
-	for (int j = 0; j < Ny; ++j) {
-
-		Uii = U[0][j];
-		Ui = inviscid_boundary_2D_U(BoundaryType.left, Uii, grid.iNorms(0, j));
-		nx = grid.iNorms(0, j).x;
-		ny = grid.iNorms(0, j).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1;
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_inviscid_state(Up, nx, ny);
-		Sii = compute_inviscid_state(Um, nx, ny);
-
-		l = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lc = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lc * Si.k,
-			(Si.u * lc + Si.a * nx * lt) * Si.k,
-			(Si.v * lc + Si.a * ny * lt) * Si.k,
-			(Si.h0 * lc + Si.a * Si.uprime * lt) * Si.k };
-
-		V2_Plus = { lt / Si.a,
-			Si.u * lt / Si.a + nx * lc,
-			Si.v * lt / Si.a + ny * lc,
-			Si.h0 * lt / Si.a + Si.uprime * lc };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + l * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		l = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lc = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lc * Sii.k,
-				(Sii.u * lc + Sii.a * nx * lt) * Sii.k,
-				(Sii.v * lc + Sii.a * ny * lt) * Sii.k,
-				(Sii.h0 * lc + Sii.a * Sii.uprime * lt) * Sii.k };
-
-		V2_Minus = { lt / Sii.a,
-			Sii.u * lt / Sii.a + nx * lc,
-			Sii.v * lt / Sii.a + ny * lc,
-			Sii.h0 * lt / Sii.a + Sii.uprime * lc };
-
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + l * identity(4);
-
-		i_plus_inviscid_Jacobians[0][j] = X;
-		i_minus_inviscid_Jacobians[0][j] = Y;
-
-		i_Fluxes[0][j] = X * Ui + Y * Uii;
-
-
-	}
-
-	// Calculate Jacobians and Explicit fluxes for i-faces on right boundary
-	for (int j = 0; j < Ny; ++j) {
-
-		Ui = U[Nx - 1][j];
-		Uii = inviscid_boundary_2D_U(BoundaryType.right, Ui, grid.iNorms(Nx, j));
-
-		nx = grid.iNorms(Nx, j).x;
-		ny = grid.iNorms(Nx, j).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1;
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_inviscid_state(Up, nx, ny);
-		Sii = compute_inviscid_state(Um, nx, ny);
-
-		l = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lc = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lc * Si.k,
-			(Si.u * lc + Si.a * nx * lt) * Si.k,
-			(Si.v * lc + Si.a * ny * lt) * Si.k,
-			(Si.h0 * lc + Si.a * Si.uprime * lt) * Si.k };
-
-		V2_Plus = { lt / Si.a,
-			Si.u * lt / Si.a + nx * lc,
-			Si.v * lt / Si.a + ny * lc,
-			Si.h0 * lt / Si.a + Si.uprime * lc };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + l * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		l = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lc = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lc * Sii.k,
-				(Sii.u * lc + Sii.a * nx * lt) * Sii.k,
-				(Sii.v * lc + Sii.a * ny * lt) * Sii.k,
-				(Sii.h0 * lc + Sii.a * Sii.uprime * lt) * Sii.k };
-
-		V2_Minus = { lt / Sii.a,
-			Sii.u * lt / Sii.a + nx * lc,
-			Sii.v * lt / Sii.a + ny * lc,
-			Sii.h0 * lt / Sii.a + Sii.uprime * lc };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + l * identity(4);
-
-
-		i_plus_inviscid_Jacobians[Nx][j] = X;
-		i_minus_inviscid_Jacobians[Nx][j] = Y;
-		i_Fluxes[Nx][j] = X * Ui + Y * Uii;
-	}
-
-	// Calculate Jacobians and Explicit fluxes for j-faces on bottom boundary
-	for (int i = 0; i < Nx; ++i) {
-
-		Uii = U[i][0];
-		Ui = inviscid_boundary_2D_U(BoundaryType.bottom, Uii, grid.jNorms(i, 0));
-
-		nx = grid.jNorms(i, 0).x;
-		ny = grid.jNorms(i, 0).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1;
-
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_inviscid_state(Up, nx, ny);
-		Sii = compute_inviscid_state(Um, nx, ny);
-
-		l = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lc = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lc * Si.k,
-				(Si.u * lc + Si.a * nx * lt) * Si.k,
-				(Si.v * lc + Si.a * ny * lt) * Si.k,
-				(Si.h0 * lc + Si.a * Si.uprime * lt) * Si.k };
-
-		V2_Plus = { lt / Si.a,
-			Si.u * lt / Si.a + nx * lc,
-			Si.v * lt / Si.a + ny * lc,
-			Si.h0 * lt / Si.a + Si.uprime * lc };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + l * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		l = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lc = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lc * Sii.k,
-				(Sii.u * lc + Sii.a * nx * lt) * Sii.k,
-				(Sii.v * lc + Sii.a * ny * lt) * Sii.k,
-				(Sii.h0 * lc + Sii.a * Sii.uprime * lt) * Sii.k };
-
-		V2_Minus = { lt / Sii.a,
-			Sii.u * lt / Sii.a + nx * lc,
-			Sii.v * lt / Sii.a + ny * lc,
-			Sii.h0 * lt / Sii.a + Sii.uprime * lc };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + l * identity(4);
-
-		j_plus_inviscid_Jacobians[i][0] = X;
-		j_minus_inviscid_Jacobians[i][0] = Y;
-		j_Fluxes[i][0] = X * Ui + Y * Uii;
-
-	}
-
-	// Calculate Jacobians and Explicit fluxes for j-faces on top boundary
-	for (int i = 0; i < Nx; ++i) {
-
-		Ui = U[i][Ny - 1];
-		Uii = inviscid_boundary_2D_U(BoundaryType.top, Ui, grid.jNorms(i, Ny));
-
-		nx = grid.jNorms(i, Ny).x;
-		ny = grid.jNorms(i, Ny).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1;
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_inviscid_state(Up, nx, ny);
-		Sii = compute_inviscid_state(Um, nx, ny);
-
-		l = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lc = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lc * Si.k,
-				(Si.u * lc + Si.a * nx * lt) * Si.k,
-				(Si.v * lc + Si.a * ny * lt) * Si.k,
-				(Si.h0 * lc + Si.a * Si.uprime * lt) * Si.k };
-
-		V2_Plus = { lt / Si.a,
-			Si.u * lt / Si.a + nx * lc,
-			Si.v * lt / Si.a + ny * lc,
-			Si.h0 * lt / Si.a + Si.uprime * lc };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + l * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		l = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lc = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - 2 * l);
-		lt = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lc * Sii.k,
-				(Sii.u * lc + Sii.a * nx * lt) * Sii.k,
-				(Sii.v * lc + Sii.a * ny * lt) * Sii.k,
-				(Sii.h0 * lc + Sii.a * Sii.uprime * lt) * Sii.k };
-
-		V2_Minus = { lt / Sii.a,
-			Sii.u * lt / Sii.a + nx * lc,
-			Sii.v * lt / Sii.a + ny * lc,
-			Sii.h0 * lt / Sii.a + Sii.uprime * lc };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + l * identity(4);
-
-		j_plus_inviscid_Jacobians[i][Ny] = X;
-		j_minus_inviscid_Jacobians[i][Ny] = Y;
-		j_Fluxes[i][Ny] = X * Ui + Y * Uii;
-
-	}
-
 	// Inner i-faces  
-	for (int i = 1; i < Nx; ++i) {
+	for (int i = 0; i <= Nx; ++i) {
 		for (int j = 0; j < Ny; ++j) {
 
 			nx = grid.iNorms(i, j).x;
 			ny = grid.iNorms(i, j).y;
 
-			Ui = U[i - 1][j];
-			Uii = U[i][j];
+			Ui = U[i][j + 1];
+			Uii = U[i + 1][j + 1];
 
 			pi = computePressure(Ui);
 			pii = computePressure(Uii);
@@ -807,13 +572,13 @@ void Solver::compute_inviscid_jacobians() {
 
 	// Inner j-faces 
 	for (int i = 0; i < Nx; ++i) {
-		for (int j = 1; j < Ny; ++j) {
+		for (int j = 0; j <= Ny; ++j) {
 
 			nx = grid.jNorms(i, j).x;
 			ny = grid.jNorms(i, j).y;
 
-			Ui = U[i][j - 1];
-			Uii = U[i][j];
+			Ui = U[i + 1][j]; 
+			Uii = U[i + 1][j + 1]; 
 
 			pi = computePressure(Ui);
 			pii = computePressure(Uii);
@@ -881,431 +646,16 @@ void Solver::compute_viscous_jacobians() {
 	pe = (gam - 1);
 	Matrix M(4, Vector(4)), N(4, Vector(4)), X(4, Vector(4)), Y(4, Vector(4)), Elv(4, Vector(4)), Erv(4, Vector(4)), Ebv(4, Vector(4)), Etv(4, Vector(4));
 
-	// Calculate Jacobians and Explicit fluxes for i-faces on left boundary 
-	for (int j = 0; j < Ny; ++j) {
-
-		Uii = U[0][j];
-
-		Elv = viscous_boundary_2D_E(BoundaryType.left, Uii, grid.iNorms(0, j));
-		Ui = viscous_boundary_2D_U(BoundaryType.left, Uii, grid.iNorms(0, j));
-
-		nx = grid.iNorms(0, j).x;
-		ny = grid.iNorms(0, j).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1 - 0.5 * (1 / ((g * dp) * (g * dp) + 1));
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_viscous_state(Up, nx, ny);
-		Sii = compute_viscous_state(Um, nx, ny);
-
-		W = 0.5 * (Ui + Uii);
-		rho = W[0];
-		u = W[1] / W[0];
-		v = W[2] / W[0];
-		T = computeTemperature(W);
-		mu = 1.458 * 1e-6 * T * sqrt(T) / (T + 110.3);
-		lambda = -2 / 3 * mu;
-		k = cp * mu / Pr;
-
-		M[0] = { 0, 0, 0, 0 };
-		M[1][0] = 0;
-		M[1][1] = (lambda + 2 * mu) * nx * nx + mu * ny * ny;
-		M[1][2] = (lambda + mu) * nx * ny;
-		M[1][3] = 0;
-		M[2][0] = 0;
-		M[2][1] = (mu + lambda) * nx * ny;
-		M[2][2] = mu * nx * nx + (lambda + 2 * mu) * ny * ny;
-		M[2][3] = 0;
-		M[3][0] = 0;
-		M[3][1] = u * (lambda + 2 * mu) * nx * nx + (v * mu + v * lambda) * nx * ny + u * mu * ny * ny;
-		M[3][2] = v * mu * nx * nx + (u * lambda + u * mu) * nx * ny + v * (lambda + 2 * mu) * ny * ny;
-		M[3][3] = k * (nx * nx + ny * ny);
-
-
-		N = {
-			{ {1, 0, 0, 0},
-			{-u / rho, 1 / rho, 0, 0},
-			{-v / rho, 0, 1 / rho, 0},
-			{ (u * u + v * v) / (2 * cv * rho) - T / rho, -u / (cv * rho), -v / (cv * rho), 1 / (cv * rho)}
-			}
-		};
-
-		dx = grid.Center(1, j).x - grid.Center(0, j).x;
-		dy = grid.Center(1, j).y - grid.Center(0, j).y;
-		dn = sqrt(dx * dx + dy * dy);
-
-		dv = constoViscPrim(Uii) - constoViscPrim(Ui);
-
-		lp = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lcp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - lp);
-		ltp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lcp * Si.k,
-			(Si.u * lcp + Si.a * nx * ltp) * Si.k,
-			(Si.v * lcp + Si.a * ny * ltp) * Si.k,
-			(Si.h0 * lcp + Si.a * Si.uprime * ltp) * Si.k };
-
-		V2_Plus = { ltp / Si.a,
-			Si.u * ltp / Si.a + nx * lcp,
-			Si.v * ltp / Si.a + ny * lcp,
-			Si.h0 * ltp / Si.a + Si.uprime * lcp };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + lp * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		lm = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lcm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - lm);
-		ltm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lcm * Sii.k,
-				(Sii.u * lcm + Sii.a * nx * ltm) * Sii.k,
-				(Sii.v * lcm + Sii.a * ny * ltm) * Sii.k,
-				(Sii.h0 * lcm + Sii.a * Sii.uprime * ltm) * Sii.k };
-
-		V2_Minus = { ltm / Sii.a,
-			Sii.u * ltm / Sii.a + nx * lcm,
-			Sii.v * ltm / Sii.a + ny * lcm,
-			Sii.h0 * ltm / Sii.a + Sii.uprime * lcm };
-
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + lm * identity(4);
-
-		i_viscous_Jacobians[0][j] = M / (-dn) * (identity(4) - Elv) * N;
-
-		//displayMatrix(Z);  
-		i_plus_inviscid_Jacobians[0][j] = X;
-		i_minus_inviscid_Jacobians[0][j] = Y;
-		i_Fluxes[0][j] = X * Ui + Y * Uii - M * dv / dn;
-	}
-
-	// Calculate Jacobians and Explicit fluxes for i-faces on right boundary
-	for (int j = 0; j < Ny; ++j) {
-
-		Ui = U[Nx - 1][j];
-		Uii = viscous_boundary_2D_U(BoundaryType.right, Ui, grid.iNorms(Nx, j));
-		Erv = viscous_boundary_2D_E(BoundaryType.right, Ui, grid.iNorms(Nx, j));
-
-		nx = grid.iNorms(Nx, j).x;
-		ny = grid.iNorms(Nx, j).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1 - 0.5 * (1 / ((g * dp) * (g * dp) + 1));
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_viscous_state(Up, nx, ny);
-		Sii = compute_viscous_state(Um, nx, ny);
-
-		W = 0.5 * (Ui + Uii);
-		rho = W[0];
-		u = W[1] / W[0];
-		v = W[2] / W[0];
-		T = computeTemperature(W);
-		mu = 1.458 * 1e-6 * T * sqrt(T) / (T + 110.3);
-		lambda = -2 / 3 * mu;
-		k = cp * mu / Pr;
-
-		M[0] = { 0, 0, 0, 0 };
-		M[1][0] = 0;
-		M[1][1] = (lambda + 2 * mu) * nx * nx + mu * ny * ny;
-		M[1][2] = (lambda + mu) * nx * ny;
-		M[1][3] = 0;
-		M[2][0] = 0;
-		M[2][1] = (mu + lambda) * nx * ny;
-		M[2][2] = mu * nx * nx + (lambda + 2 * mu) * ny * ny;
-		M[2][3] = 0;
-		M[3][0] = 0;
-		M[3][1] = u * (lambda + 2 * mu) * nx * nx + (v * mu + v * lambda) * nx * ny + u * mu * ny * ny;
-		M[3][2] = v * mu * nx * nx + (u * lambda + u * mu) * nx * ny + v * (lambda + 2 * mu) * ny * ny;
-		M[3][3] = k * (nx * nx + ny * ny);
-
-		N = {
-			{ {1, 0, 0, 0},
-			{-u / rho, 1 / rho, 0, 0},
-			{-v / rho, 0, 1 / rho, 0},
-			{ (u * u + v * v) / (2 * cv * rho) - T / rho, -u / (cv * rho), -v / (cv * rho), 1 / (cv * rho)}
-			}
-		};
-
-		dx = grid.Center(Nx - 1, j).x - grid.Center(Nx - 2, j).x;
-		dy = grid.Center(Nx - 1, j).y - grid.Center(Nx - 2, j).y;
-
-		dn = sqrt(dx * dx + dy * dy);
-		dv = constoViscPrim(Uii) - constoViscPrim(Ui);
-
-
-		lp = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lcp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - lp);
-		ltp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lcp * Si.k,
-			(Si.u * lcp + Si.a * nx * ltp) * Si.k,
-			(Si.v * lcp + Si.a * ny * ltp) * Si.k,
-			(Si.h0 * lcp + Si.a * Si.uprime * ltp) * Si.k };
-
-		V2_Plus = { ltp / Si.a,
-			Si.u * ltp / Si.a + nx * lcp,
-			Si.v * ltp / Si.a + ny * lcp,
-			Si.h0 * ltp / Si.a + Si.uprime * lcp };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + lp * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		lm = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lcm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - lm);
-		ltm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lcm * Sii.k,
-				(Sii.u * lcm + Sii.a * nx * ltm) * Sii.k,
-				(Sii.v * lcm + Sii.a * ny * ltm) * Sii.k,
-				(Sii.h0 * lcm + Sii.a * Sii.uprime * ltm) * Sii.k };
-
-		V2_Minus = { ltm / Sii.a,
-			Sii.u * ltm / Sii.a + nx * lcm,
-			Sii.v * ltm / Sii.a + ny * lcm,
-			Sii.h0 * ltm / Sii.a + Sii.uprime * lcm };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + lm * identity(4);
-
-		i_viscous_Jacobians[Nx][j] = M / (-dn) * (Erv - identity(4)) * N;
-		i_plus_inviscid_Jacobians[Nx][j] = X;
-		i_minus_inviscid_Jacobians[Nx][j] = Y;
-		i_Fluxes[Nx][j] = X * Ui + Y * Uii - M * dv / dn;
-	}
-
-	// Calculate Jacobians and Explicit fluxes for j-faces on bottom boundary
-	for (int i = 0; i < Nx; ++i) {
-
-		Uii = U[i][0];
-		Ui = viscous_boundary_2D_U(BoundaryType.bottom, Uii, grid.jNorms(i, 0));
-		Ebv = viscous_boundary_2D_E(BoundaryType.bottom, Uii, grid.jNorms(i, 0));
-
-		nx = grid.jNorms(i, 0).x;
-		ny = grid.jNorms(i, 0).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1 - 0.5 * (1 / ((g * dp) * (g * dp) + 1));
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-		Si = compute_viscous_state(Up, nx, ny);
-		Sii = compute_viscous_state(Um, nx, ny);
-
-		W = 0.5 * (Ui + Uii);
-		rho = W[0];
-		u = W[1] / W[0];
-		v = W[2] / W[0];
-		T = computeTemperature(W);
-
-		mu = 1.458 * 1e-6 * T * sqrt(T) / (T + 110.3);
-		lambda = -2 / 3 * mu;
-		k = cp * mu / Pr;
-
-		M[0] = { 0, 0, 0, 0 };
-		M[1][0] = 0;
-		M[1][1] = (lambda + 2 * mu) * nx * nx + mu * ny * ny;
-		M[1][2] = (lambda + mu) * nx * ny;
-		M[1][3] = 0;
-		M[2][0] = 0;
-		M[2][1] = (mu + lambda) * nx * ny;
-		M[2][2] = mu * nx * nx + (lambda + 2 * mu) * ny * ny;
-		M[2][3] = 0;
-		M[3][0] = 0;
-		M[3][1] = u * (lambda + 2 * mu) * nx * nx + (v * mu + v * lambda) * nx * ny + u * mu * ny * ny;
-		M[3][2] = v * mu * nx * nx + (u * lambda + u * mu) * nx * ny + v * (lambda + 2 * mu) * ny * ny;
-		M[3][3] = k * (nx * nx + ny * ny);
-
-		N = {
-			{ {1, 0, 0, 0},
-			{-u / rho, 1 / rho, 0, 0},
-			{-v / rho, 0, 1 / rho, 0},
-			{ (u * u + v * v) / (2 * cv * rho) - T / rho, -u / (cv * rho), -v / (cv * rho), 1 / (cv * rho)}
-			}
-		};
-
-		dx = grid.Center(i, 1).x - grid.Center(i, 0).x;
-		dy = grid.Center(i, 1).y - grid.Center(i, 0).y;
-
-		dn = sqrt(dx * dx + dy * dy);
-		dv = constoViscPrim(Uii) - constoViscPrim(Ui);
-
-		lp = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lcp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - lp);
-		ltp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lcp * Si.k,
-				(Si.u * lcp + Si.a * nx * ltp) * Si.k,
-				(Si.v * lcp + Si.a * ny * ltp) * Si.k,
-				(Si.h0 * lcp + Si.a * Si.uprime * ltp) * Si.k };
-
-		V2_Plus = { ltp / Si.a,
-			Si.u * ltp / Si.a + nx * lcp,
-			Si.v * ltp / Si.a + ny * lcp,
-			Si.h0 * ltp / Si.a + Si.uprime * lcp };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + lp * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		lm = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lcm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - lm);
-		ltm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lcm * Sii.k,
-				(Sii.u * lcm + Sii.a * nx * ltm) * Sii.k,
-				(Sii.v * lcm + Sii.a * ny * ltm) * Sii.k,
-				(Sii.h0 * lcm + Sii.a * Sii.uprime * ltm) * Sii.k };
-
-		V2_Minus = { ltm / Sii.a,
-			Sii.u * ltm / Sii.a + nx * lcm,
-			Sii.v * ltm / Sii.a + ny * lcm,
-			Sii.h0 * ltm / Sii.a + Sii.uprime * lcm };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + lm * identity(4);
-
-		j_viscous_Jacobians[i][0] = M / (-dn) * (identity(4) - Ebv) * N;
-		j_plus_inviscid_Jacobians[i][0] = X;
-		j_minus_inviscid_Jacobians[i][0] = Y;
-		j_Fluxes[i][0] = X * Ui + Y * Uii - M * dv / dn;
-
-	}
-
-	// Calculate Jacobians and Explicit fluxes for j-faces on top boundary
-	for (int i = 0; i < Nx; ++i) {
-
-		Ui = U[i][Ny - 1];
-		Uii = viscous_boundary_2D_U(BoundaryType.top, Ui, grid.jNorms(i, Ny));
-		Etv = viscous_boundary_2D_E(BoundaryType.top, Ui, grid.jNorms(i, Ny));
-
-		nx = grid.jNorms(i, Ny).x;
-		ny = grid.jNorms(i, Ny).y;
-
-		pi = computePressure(Ui);
-		pii = computePressure(Uii);
-		dp = fabs(pii - pi) / min(pii, pi);
-		weight = 1 - 0.5 * (1 / ((g * dp) * (g * dp) + 1));
-
-		Up = weight * Ui + (1 - weight) * Uii;
-		Um = (1 - weight) * Ui + weight * Uii;
-
-		Si = compute_viscous_state(Up, nx, ny);
-		Sii = compute_viscous_state(Um, nx, ny);
-
-		W = 0.5 * (Ui + Uii);
-		rho = W[0];
-		u = W[1] / W[0];
-		v = W[2] / W[0];
-		T = computeTemperature(W);
-		mu = 1.458 * 1e-6 * T * sqrt(T) / (T + 110.3);
-		lambda = -2 / 3 * mu;
-		k = cp * mu / Pr;
-
-		M[0] = { 0, 0, 0, 0 };
-		M[1][0] = 0;
-		M[1][1] = (lambda + 2 * mu) * nx * nx + mu * ny * ny;
-		M[1][2] = (lambda + mu) * nx * ny;
-		M[1][3] = 0;
-		M[2][0] = 0;
-		M[2][1] = (mu + lambda) * nx * ny;
-		M[2][2] = mu * nx * nx + (lambda + 2 * mu) * ny * ny;
-		M[2][3] = 0;
-		M[3][0] = 0;
-		M[3][1] = u * (lambda + 2 * mu) * nx * nx + (v * mu + v * lambda) * nx * ny + u * mu * ny * ny;
-		M[3][2] = v * mu * nx * nx + (u * lambda + u * mu) * nx * ny + v * (lambda + 2 * mu) * ny * ny;
-		M[3][3] = k * (nx * nx + ny * ny);
-
-		N = {
-			{ {1, 0, 0, 0},
-			{-u / rho, 1 / rho, 0, 0},
-			{-v / rho, 0, 1 / rho, 0},
-			{ (u * u + v * v) / (2 * cv * rho) - T / rho, -u / (cv * rho), -v / (cv * rho), 1 / (cv * rho)}
-			}
-		};
-
-		dx = grid.Center(i, Ny - 1).x - grid.Center(i, Ny - 2).x;
-		dy = grid.Center(i, Ny - 1).y - grid.Center(i, Ny - 2).y;
-
-		dn = sqrt(dx * dx + dy * dy);
-		dv = constoViscPrim(Uii) - constoViscPrim(Ui);
-
-		lp = 0.5 * (Si.uprime + fabs(Si.uprime));
-		lcp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) + 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)) - lp);
-		ltp = 0.5 * (0.5 * (Si.uprime + Si.a + fabs(Si.uprime + Si.a)) - 0.5 * (Si.uprime - Si.a + fabs(Si.uprime - Si.a)));
-
-		V1_Plus = { lcp * Si.k,
-				(Si.u * lcp + Si.a * nx * ltp) * Si.k,
-				(Si.v * lcp + Si.a * ny * ltp) * Si.k,
-				(Si.h0 * lcp + Si.a * Si.uprime * ltp) * Si.k };
-
-		V2_Plus = { ltp / Si.a,
-			Si.u * ltp / Si.a + nx * lcp,
-			Si.v * ltp / Si.a + ny * lcp,
-			Si.h0 * ltp / Si.a + Si.uprime * lcp };
-
-		m = { Si.pp, -Si.u * pe, -Si.v * pe, pe };
-		n = { -Si.uprime, nx, ny, 0 };
-
-		X = outerProduct(V1_Plus, m) + outerProduct(V2_Plus, n) + lp * identity(4);
-
-		m = { Sii.pp, -Sii.u * pe, -Sii.v * pe, pe };
-		n = { -Sii.uprime, nx, ny, 0 };
-
-		lm = 0.5 * (Sii.uprime - fabs(Sii.uprime));
-		lcm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) + 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)) - lm);
-		ltm = 0.5 * (0.5 * (Sii.uprime + Sii.a - fabs(Sii.uprime + Sii.a)) - 0.5 * (Sii.uprime - Sii.a - fabs(Sii.uprime - Sii.a)));
-
-		V1_Minus = { lcm * Sii.k,
-				(Sii.u * lcm + Sii.a * nx * ltm) * Sii.k,
-				(Sii.v * lcm + Sii.a * ny * ltm) * Sii.k,
-				(Sii.h0 * lcm + Sii.a * Sii.uprime * ltm) * Sii.k };
-
-		V2_Minus = { ltm / Sii.a,
-			Sii.u * ltm / Sii.a + nx * lcm,
-			Sii.v * ltm / Sii.a + ny * lcm,
-			Sii.h0 * ltm / Sii.a + Sii.uprime * lcm };
-
-		Y = outerProduct(V1_Minus, m) + outerProduct(V2_Minus, n) + lm * identity(4);
-
-		j_viscous_Jacobians[i][Ny] = M / (-dn) * (Etv - identity(4)) * N;
-		j_plus_inviscid_Jacobians[i][Ny] = X;
-		j_minus_inviscid_Jacobians[i][Ny] = Y;
-		j_Fluxes[i][Ny] = X * Ui + Y * Uii - M * dv / dn;
-
-	}
 
 	// Inner i-faces  
-	for (int i = 1; i < Nx; ++i) {
+	for (int i = 0; i <= Nx; ++i) {
 		for (int j = 0; j < Ny; ++j) {
 
 			nx = grid.iNorms(i, j).x;
 			ny = grid.iNorms(i, j).y;
 
-			Ui = U[i - 1][j];
-			Uii = U[i][j];
+			Ui = U[i][j + 1];
+			Uii = U[i + 1][j + 1];
 
 			pi = computePressure(Ui);
 			pii = computePressure(Uii);
@@ -1350,8 +700,25 @@ void Solver::compute_viscous_jacobians() {
 				}
 			};
 
-			dx = grid.Center(i, j).x - grid.Center(i - 1, j).x;
-			dy = grid.Center(i, j).y - grid.Center(i - 1, j).y;
+			if (i == 0) {
+				dx = grid.Center(1, j).x - grid.Center(0, j).x;
+				dy = grid.Center(1, j).y - grid.Center(0, j).y;
+			}
+			else {
+				dx = grid.Center(i + 1, j).x - grid.Center(i, j).x;
+				dy = grid.Center(i + 1, j).y - grid.Center(i, j).y;
+			}
+			
+
+			if (i == 0) {
+				dx = grid.Center(1, j).x - grid.Center(0, j).x;
+				dy = grid.Center(1, j).y - grid.Center(0, j).y;
+			}
+			else {
+				dx = grid.Center(i + 1, j).x - grid.Center(i, j).x;
+				dy = grid.Center(i + 1, j).y - grid.Center(i, j).y;
+			}
+			
 
 			dn = sqrt(dx * dx + dy * dy);
 			dv = constoViscPrim(Uii) - constoViscPrim(Ui);
@@ -1523,9 +890,9 @@ void Solver::solve_left_line_inviscid() {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i][0], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i][Ny - 1], grid.jNorms(i, Ny));
-	El = inviscid_boundary_2D_E(BoundaryType.left, U[i][Ny - 1], grid.iNorms(i, Ny - 1));
+	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][Ny], grid.iNorms(i, Ny - 1));
 
 	// Top Boundary
 	A = grid.Volume(i, Ny - 1) / dt * identity(4)
@@ -1549,7 +916,7 @@ void Solver::solve_left_line_inviscid() {
 	// Middle Boundry
 	for (int j = Ny - 2; j > 0; --j) {
 
-		El = inviscid_boundary_2D_E(BoundaryType.left, U[i][j], grid.iNorms(i, j));
+		El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][j + 1], grid.iNorms(i, j));
 
 		B = j_minus_inviscid_Jacobians[i][j + 1] * (grid.jArea(i, j + 1));
 
@@ -1576,7 +943,7 @@ void Solver::solve_left_line_inviscid() {
 
 	//  Bottom boundary
 
-	El = inviscid_boundary_2D_E(BoundaryType.left, U[i][0], grid.iNorms(i, 0));
+	El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][1], grid.iNorms(i, 0));
 
 	B = j_minus_inviscid_Jacobians[i][1] * (grid.jArea(i, 1));
 
@@ -1619,8 +986,8 @@ void Solver::solve_middle_line_inviscid(const int i) {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i][0], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i][Ny - 1], grid.jNorms(i, Ny));
+	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
 
 	// Top Boundary
 	A = grid.Volume(i, Ny - 1) / dt * identity(4)
@@ -1717,9 +1084,9 @@ void Solver::solve_right_line_inviscid() {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i][0], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i][Ny - 1], grid.jNorms(i, Ny));
-	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i][Ny - 1], grid.iNorms(i + 1, Ny - 1));
+	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][Ny], grid.iNorms(i + 1, Ny - 1));
 
 	// Top Boundary
 	A = grid.Volume(i, Ny - 1) / dt * identity(4)
@@ -1743,7 +1110,7 @@ void Solver::solve_right_line_inviscid() {
 	// Middle Boundry
 	for (int j = Ny - 2; j > 0; --j) {
 
-		Er = inviscid_boundary_2D_E(BoundaryType.right, U[i][j], grid.iNorms(i + 1, j));
+		Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][j + 1], grid.iNorms(i + 1, j));
 
 		B = j_minus_inviscid_Jacobians[i][j + 1] * (grid.jArea(i, j + 1));
 
@@ -1768,7 +1135,7 @@ void Solver::solve_right_line_inviscid() {
 		v[j] = (F - B * v[j + 1]) / alpha;
 	}
 	//  Bottom boundary
-	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i][0], grid.iNorms(i + 1, 0));
+	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][1], grid.iNorms(i + 1, 0));
 
 	B = j_minus_inviscid_Jacobians[i][1] * (grid.jArea(i, 1));
 

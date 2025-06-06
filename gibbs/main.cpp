@@ -1,13 +1,11 @@
 
 #include <iostream>
 #include <cmath>
-#include <vector>
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
-#include <vector>
-#include "../LinearAlgebra/linear_algebra.hpp"
-#include "../2D_Real_Gas_FVS/real_gas_fvs.hpp" 
+#include "../linalglib/linalg.hpp"
+#include "../realgaslib/realgas.hpp"  
 
 using namespace std;
 constexpr int n_species = 10;
@@ -437,53 +435,53 @@ public:
 		p = rho * R_mix * T;  // Initial pressure estimate	  
 
 		compute_temperature();
-		Vector mass_fractions(11); 
+		// Vector mass_fractions(11); 
 
-		for (int i = 0; i < n_species; ++i) {
-			mass_fractions[i] = Xk[i]; // Store mass fractions    
-		} 
-		mass_fractions[10] = T; // Store temperature  
+		// for (int i = 0; i < n_species; ++i) {
+		// 	mass_fractions[i] = Xk[i]; // Store mass fractions    
+		// } 
+		// mass_fractions[10] = T; // Store temperature  
 
-		// gam = 1 + R_mix / cv_mix;
-		// Vector thermo = { rho, e, p, T, R_mix, cv_mix, gam, 0.0, 0.0 };
+		gam = 1 + R_mix / cv_mix;
+		Vector thermo = { rho, e, p, T, R_mix, cv_mix, gam, 0.0, 0.0 }; 
 
-		// //////  Compute derivatives ////
+		//////  Compute derivatives ////
 
-		// // dp/dp | e
-		// e = E + 1;
-		// T = e / 717;
-		// p = rho * 287.0 * T;
-		// compute_temperature();
-		// double p1 = p;
-
-
-		// e = E - 1;
-		// T = e / 717;
-		// p = rho * 287.0 * T;
-		// compute_temperature();
-		// double p2 = p;
-
-		// double dpde = (p1 - p2) / 2; // dp/de 
+		// dp/dp | e
+		e = E + 1;
+		T = e / 717;
+		p = rho * 287.0 * T;
+		compute_temperature();
+		double p1 = p;
 
 
-		// // dp/de| rho
-		// rho = Rho + 0.00001;
-		// T = E / 717;
-		// p = rho * 287.0 * T;
-		// compute_temperature();
-		// p1 = p;
+		e = E - 1;
+		T = e / 717;
+		p = rho * 287.0 * T;
+		compute_temperature();
+		double p2 = p;
 
-		// rho = Rho - 0.00001;
-		// T = E / 717;
-		// p = rho * 287.0 * T;
-		// compute_temperature();
-		// p2 = p;
-		// double dpdrho = (p1 - p2) / 0.00002; // dp/drho
+		double dpde = (p1 - p2) / 2; // dp/de 
 
-		// thermo[7] = dpdrho; // dp/drho | e 
-		// thermo[8] = dpde; // dp/de | rho  
 
-		return mass_fractions;
+		// dp/de| rho
+		rho = Rho + 0.00001;
+		T = E / 717;
+		p = rho * 287.0 * T;
+		compute_temperature();
+		p1 = p;
+
+		rho = Rho - 0.00001;
+		T = E / 717;
+		p = rho * 287.0 * T;
+		compute_temperature();
+		p2 = p;
+		double dpdrho = (p1 - p2) / 0.00002; // dp/drho
+
+		thermo[7] = dpdrho; // dp/drho | e 
+		thermo[8] = dpde; // dp/de | rho  
+
+		return thermo;
 	}
 };
 
@@ -494,96 +492,48 @@ void display_entries(ThermoEntry& thermo) {
 	cout << "T: " << thermo.T << endl;
 	cout << "R: " << thermo.R << endl;
 	cout << "cv: " << thermo.cv << endl;
-	cout << "gam: " << thermo.gam << endl;
+	cout << "gam: " << thermo.gamma << endl;
 	cout << "dpdrho: " << thermo.dpdrho << endl;
 	cout << "dpde: " << thermo.dpde << endl;
 }
 
 int main() {
 
-	//int n = 400;
+	int n = 400;
 
-	//double e; 
-	//double rho; 
-	//Chemistry chem; 
-	//Vector thermo, mass_fractions;  
-	//Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0 };  
-	//ofstream file("Chemical_Equilibrum_Lookup_Table.csv"); 
-	////ofstream file("Chemical_Equilibrum_Mass_Fractions_Lookup_Table.csv"); 
-	//file << "rho, e, p, T, R, cv, gam, dpdrho, dpde" << endl; // Header for the CSV file   
+	Vector e(n); 
+	for (int i = 0; i < n; ++i) {
+		e[i] = 717 * 600 + (3.5e7 - 717*600)/(n-1)*i; 
+	}
 
+	Vector rho = custom_rho_spacing();  
 
-	//for (int i = 0; i < n; ++i) { 
-	//	for (int j = 0; j < n; ++j) {  
-	//		rho = 1e-4 + (10.0 - 1e-4) / (n - 1) * i;  
-	//		e = 717 * 600 + ( 3.5e7 - 717 * 600 ) / (n - 1) * j;     
-	//		thermo = chem.compute_equilibrium(rho, e, initial_moles);    
-	//		file << rho << ", " << e << ", " << thermo[2] << ", " << thermo[3] << ", " << thermo[4] << ", " << thermo[5] << ", " << thermo[6] << ", " << thermo[7] << ", " << thermo[8] << endl; // Write to CSV file    
-	//	}
-	//	cout << i * n << endl;  
-	//}
+	Chemistry chem; 
+	Vector mass_fractions;  
+	Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0 };  
+	ofstream file("thermochemical_table.csv"); 
+	file << "rho, e, p, T, R, cv, gam, dpdrho, dpde" << endl; // Header for the CSV file   
+	Tensor thermo(n, Matrix(n, Vector(9)));  
 
-	ofstream dissociation("N2, O2, NO, N, O, Ar vs T_eqbm (MASS).dat"); 
-	ofstream ionization("Ar+, N+, O+, e- vs T_eqbm (MASS).dat"); 
+	for (int i = 0; i < n; ++i) { 
+		for (int j = 0; j < n; ++j) {  
 
-	double e;  
-	double rho = 0.1;    
-	Chemistry chem;  y
-	Vector thermo;  
-	Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0};  
+			
+			try {
+				thermo[i][j] = chem.compute_equilibrium(rho[i], e[j], initial_moles); 
+					// ... write line
+			} catch (const exception& ex) {
+				cerr << "Error at i=" << i << ", j=" << j << ": " << ex.what() << endl;
+			} 			
+			file << rho[i] << ", " << e[j] << ", " << thermo[i][j][2] << ", " << thermo[i][j][3] << ", " << thermo[i][j][4] 
+				<< ", " << thermo[i][j][5] << ", " << thermo[i][j][6] << ", " << thermo[i][j][7] << ", " << thermo[i][j][8] << endl; // Write to CSV file  
 
-	dissociation << "TITLE = \" Dissociation Mass Fractions\"\n";
-	dissociation << "Variables = \" N2\", \"O2\", \"NO\", \"N\", \"O\", \"Ar\", \"T\"\n";
-	dissociation << "Zone T= \"Temperature\", I=" << 1000 << ", F=POINT\n";
-
-	ionization << "TITLE = \" Ionization Mass Fractions\"\n";
-	ionization << "Variables = \" Ar+\", \"N+\", \"O+\", \"e-\", \"T\"\n";
-	ionization << "Zone T= \"Temperature\", I=" << 1000 << ", F=POINT\n"; 
-
-	for (int i = 0; i < 1000; ++i) {  
-		e = 717 * 600 + ( 4.5e7 - 717 * 600 ) / (999) * i;    
-		thermo = chem.compute_equilibrium(rho, e, initial_moles);    
-		dissociation << thermo[0] << " " << thermo[1] << " " << thermo[2] << " " << thermo[3] << " " << thermo[4] << " " << thermo[5] << " " << thermo[10] << endl;   
-		ionization << thermo[6] << " " << thermo[7] << " " << thermo[8] << " " << thermo[9] << " " << thermo[10] << endl;   
-		cout << i << endl;    
-	};
+		}
+		cout << i * n << endl; 
+	}
 
 
-	// double e = 2e7;
-	// double rho = 1.225;
-	// Chemistry chem;
-	// Vector thermo;
-	// Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0 };
-
-
-	// thermo = chem.compute_equilibrium(rho, e, initial_moles);
-
-	// chem.display_mass_fraction();
-
-
-	//double rho = 0.225662; 
-	//double e = 7.345e6; 
-	//string filename = "C:/Users/Connor/source/repos/Directed Study Spring 2025/build/Chemical Equilibrium/Release/Chemical_Equilibrium_Lookup_Table.csv"; 
-
-
-	//vector<vector<ThermoEntry>> table = load_csv(filename); // Load the CSV file   
-
-	//display_entries(table[300][115]); // Display the first entry in the table
-
-	//ThermoEntry result = bilinear_interpolate(table, rho, e); // Perform bilinear interpolation  
-	//cout << "Time taken for bilinear interpolation: " << duration.count() << " microseconds" << endl; // Print duration 
-	//cout << "Interpolated values:" << endl; 
-	//cout << "rho: " << result.rho << endl; 
-	//cout << "e: " << result.e << endl;
-	//cout << "T: " << result.T << endl;
-	//cout << "R: " << result.R << endl;
-	//cout << "cv: " << result.cv << endl;
-	//cout << "gam: " << result.gam << endl;
-	//cout << "p: " << result.p << endl;
-	//cout << "dpdrho: " << result.dpdrho << endl;
-	//cout << "dpde: " << result.dpde << endl;
-
-
-
+	
+	file.close(); 
 	return 0;
 }

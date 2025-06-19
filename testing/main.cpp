@@ -3,19 +3,13 @@
 
 int main() {
     
-    Matrix A = {
-        {0, 2, 1},
-        {1, 1, 1},
-        {2, 1, 0}
-    };
+    const int Nx = 200, Ny = 100;
 
-    Vector B = {4, 6, 7};
-    Vector x = B/A; 
-    // displayVector(x); 
+    RampGrid grid(Nx, Ny, 3, 1, 20);
 
-    Vector check = A * x;
-    // displayVector(check); 
+    string filename = "../plotfiles/gridplot.dat";
+
+    output_grid(grid, Nx, Ny, filename);
 
     return 0;
 }
-

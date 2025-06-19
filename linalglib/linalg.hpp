@@ -60,12 +60,14 @@ Matrix operator*(const Matrix& A, const Matrix& B);
 Matrix operator/(const Matrix& A, const double& s);
 
 
-void LUDecomposition(const Matrix& A, Matrix& L, Matrix& U);
+void LUDecomposition(const Matrix& A, Matrix& L, Matrix& U, vector<int>& P);
+Matrix applyPermutation(const Matrix& B, const vector<int>& P);
+Matrix forwardSubstitution(const Matrix& L, const Matrix& B);
+Matrix backwardSubstitution(const Matrix& U, const Matrix& Y);
+Matrix operator/(const Matrix& B, const Matrix& A);
+
+
 Vector forwardSubstitution(const Matrix& L, const Vector& B);
 Vector backwardSubstitution(const Matrix& U, const Vector& Y);
+Vector applyPermutation(const Vector& B, const vector<int>& P);
 Vector operator/(const Vector& B, const Matrix& A);
-
-
-Matrix forwardSubstitution(const Matrix& L, const Matrix& b);
-Matrix backwardSubstitution(const Matrix& U, const Matrix& y);
-Matrix operator/(const Matrix& B, const Matrix& A);

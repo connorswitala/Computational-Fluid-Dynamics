@@ -13,7 +13,12 @@
         "string_view": "cpp",
         "format": "cpp",
         "initializer_list": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "ostream": "cpp",
+        "optional": "cpp",
+        "variant": "cpp",
+        "iostream": "cpp",
+        "tuple": "cpp"
     },
 
 }

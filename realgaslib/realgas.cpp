@@ -171,12 +171,13 @@ vector<double> custom_rho_spacing() {
 }
 
 
-Solver::Solver(const int Nx, const int Ny, const inlet_conditions& INLET, Grid& grid, BoundaryConditions BoundaryType, 
-    double CFL, double Tw, int& progress_update, bool& chemical_eqbm_enabled) : Nx(Nx), Ny(Ny),  INLET(INLET), grid(grid), 
-    BoundaryType(BoundaryType), CFL(CFL), Tw(Tw), progress_update(progress_update), chemical_eqbm_enabled(chemical_eqbm_enabled) {
+Solver::Solver(const int Nx, const int Ny, Vector U_inlet, Grid& grid, string& gridtype, BCMap BCs,
+    double CFL, double Tw, int& progress_update, bool& restart, string& restart_name, bool& chemical_eqbm_enabled,
+	Tensor& U) : Nx(Nx), Ny(Ny), U_inlet(U_inlet), grid(grid), gridtype(gridtype), BCs(BCs), CFL(CFL), Tw(Tw),
+	progress_update(progress_update), restart(restart), restart_name(restart_name), chemical_eqbm_enabled(chemical_eqbm_enabled),
+	U(U) {
 
 	V_inlet = Vector(4); U_inlet = Vector(4);
-	U = Tensor(Nx + 2, Matrix(Ny + 2, Vector(4, 0.0)));
 	dU_new = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 	dU_old = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 
@@ -184,7 +185,6 @@ Solver::Solver(const int Nx, const int Ny, const inlet_conditions& INLET, Grid& 
 	j_Fluxes = Tensor(Nx, Matrix(Ny + 1, Vector(4, 0.0)));
 	i_rho_fluxes = Tensor(Nx + 1, Matrix(Ny, Vector(4, 0.0)));
 	j_rho_fluxes = Tensor(Nx, Matrix(Ny + 1, Vector(4, 0.0)));
-
 
 	i_rho_A = Tesseract(Nx + 1, Tensor(Ny, Matrix(4, Vector(4, 0.0))));
 	i_plus_inviscid_Jacobians = Tesseract(Nx + 1, Tensor(Ny, Matrix(4, Vector(4, 0.0))));
@@ -201,46 +201,27 @@ Solver::Solver(const int Nx, const int Ny, const inlet_conditions& INLET, Grid& 
 
 	cell_thermo = vector<vector<ThermoEntry>>(Nx + 2, vector<ThermoEntry>(Ny + 2));
 
-	V_inlet = { INLET.rho, INLET.u, INLET.v, INLET.p };
-
-	gridtype;
-	if (dynamic_cast<RampGrid*>(&grid)) gridtype = "Ramp";
-	else if (dynamic_cast<CylinderGrid*>(&grid)) gridtype = "Cylinder";
-	else if (dynamic_cast<FlatPlateGrid*>(&grid)) gridtype = "Flat Plate";
-	else if (dynamic_cast<DoubleConeGrid*>(&grid)) gridtype = "Double Cone";
-	else if (dynamic_cast<MirroredGrid*>(&grid)) gridtype = "Mirrored Double Ramp";
-	else gridtype = "Unknown";
-
-	U_inlet = primtoCons(V_inlet, perfgam);
-
-	for (int i = 0; i < Nx + 2; ++i) {
-		for (int j = 0; j < Ny + 2; ++j) {
-			U[i][j] = U_inlet;
-		}
-	}
-
 	if (chemical_eqbm_enabled) {
-		string chemistry_table = "thermochemical_table.csv";  // path to your CSV file
+		string chemistry_table = "../plotfiles/thermochemical_table.csv";  // path to your CSV file
 		chem_lookup_table = load_csv(chemistry_table);
 		rho_vec = custom_rho_spacing();
 	}
-
 };
 
-Matrix Solver::inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, const Point& normals) {
+Matrix Solver::inviscid_boundary_2D_E(BCType type, const Vector& U, const Point& normals) {
 
 	Matrix E = zeros(4, 4);
 
 	switch (type) {
 
-	case BoundaryCondition::Inlet:
+	case BCType::Inlet:
 		return E;
 
-	case BoundaryCondition::Outlet:
+	case BCType::Outlet:
 
 		return identity(4);
 
-	case BoundaryCondition::IsothermalWall:
+	case BCType::IsothermalWall:
 
 		E = { {1, 0, 0, 0},
 			  {0, (1 - 2 * normals.x * normals.x), -2 * normals.x * normals.y, 0 },
@@ -250,7 +231,7 @@ Matrix Solver::inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, c
 
 		return E;
 
-	case BoundaryCondition::AdiabaticWall:
+	case BCType::AdiabaticWall:
 
 		E = { {1, 0, 0, 0},
 			  {0, (1 - 2 * normals.x * normals.x), -2 * normals.x * normals.y, 0 },
@@ -260,7 +241,7 @@ Matrix Solver::inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, c
 
 		return E;
 
-	case BoundaryCondition::Symmetry:
+	case BCType::Symmetry:
 
 		E = { {1, 0, 0, 0},
 			  {0, (1 - 2 * normals.x * normals.x), -2 * normals.x * normals.y, 0 },
@@ -274,21 +255,21 @@ Matrix Solver::inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, c
 	}
 
 }
-Vector Solver::inviscid_boundary_2D_U(BoundaryCondition type, const Vector& U, const Point& normals) {
+Vector Solver::inviscid_boundary_2D_U(BCType type, const Vector& U, const Point& normals) {
 
 	Vector ghost(4);
 	double u = 0.0, v = 0.0;
 
 	switch (type) {
 
-	case BoundaryCondition::Inlet:
+	case BCType::Inlet:
 		return U_inlet;
 
-	case BoundaryCondition::Outlet:
+	case BCType::Outlet:
 
 		return U;
 
-	case BoundaryCondition::IsothermalWall:
+	case BCType::IsothermalWall:
 
 		u = U[1] / U[0];
 		v = U[2] / U[0];
@@ -300,7 +281,7 @@ Vector Solver::inviscid_boundary_2D_U(BoundaryCondition type, const Vector& U, c
 
 		return ghost;
 
-	case BoundaryCondition::AdiabaticWall:
+	case BCType::AdiabaticWall:
 
 		u = U[1] / U[0];
 		v = U[2] / U[0];
@@ -312,7 +293,7 @@ Vector Solver::inviscid_boundary_2D_U(BoundaryCondition type, const Vector& U, c
 
 		return ghost;
 
-	case BoundaryCondition::Symmetry:
+	case BCType::Symmetry:
 
 		u = U[1] / U[0];
 		v = U[2] / U[0];
@@ -381,13 +362,13 @@ void Solver::get_perf_chemistry() {
 }
 void Solver::get_ghost_cells() {
 	for (int i = 0; i < Nx; ++i) {
-		U[i + 1][0] = inviscid_boundary_2D_U(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
-		U[i + 1][Ny + 1] = inviscid_boundary_2D_U(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+		U[i + 1][0] = inviscid_boundary_2D_U(BCs.bottom, U[i + 1][1], grid.jNorms(i, 0));
+		U[i + 1][Ny + 1] = inviscid_boundary_2D_U(BCs.top, U[i + 1][Ny], grid.jNorms(i, Ny));
 	}
 
 	for (int j = 0; j < Ny; ++j) {
-		U[0][j + 1] = inviscid_boundary_2D_U(BoundaryType.left, U[1][j + 1], grid.iNorms(0, j));
-		U[Nx + 1][j + 1] = inviscid_boundary_2D_U(BoundaryType.right, U[Nx][j + 1], grid.iNorms(Nx, j));
+		U[0][j + 1] = inviscid_boundary_2D_U(BCs.left, U[1][j + 1], grid.iNorms(0, j));
+		U[Nx + 1][j + 1] = inviscid_boundary_2D_U(BCs.right, U[Nx][j + 1], grid.iNorms(Nx, j));
 	}
 }
 
@@ -420,7 +401,7 @@ void Solver::compute_dt() {
 void Solver::solve_inviscid() {
 
 	cout << "\033[33mRunning Inviscid Chemical Equilibrium DPLR for " << Nx << " by " << Ny << " " << gridtype << " with a CFL of " << fixed << setprecision(2) << CFL << "...\033[0m" << "\n\n";
-	string filename = "../plotfiles/Chemical Equilibrium Inviscid " + to_string(Nx) + "x" + to_string(Ny) + "_" + gridtype + "_Solution.dat";
+	string filename = "../plotfiles/CEI_" + to_string(Nx) + "x" + to_string(Ny) + gridtype + ".dat"; 
 
 	auto start = TIME;
 	int counter = 0;
@@ -430,32 +411,38 @@ void Solver::solve_inviscid() {
 	t.push_back(0.0);
 	iteration.push_back(0.0);
 	Global_Residual.push_back(10.0);
+	write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
+	
 
-	if (chemical_eqbm_enabled) {
-		get_chemistry();
-	}
-	else {
-		get_perf_chemistry();
-	}
+	get_ghost_cells(); 
 
 	while (outer_residual >= 1e-6) {
+
+		get_ghost_cells(); 
+		
+		if (chemical_eqbm_enabled) {
+			get_chemistry();
+		}
+		else {
+			get_perf_chemistry();
+		}
 
 		compute_dt();
 		solve_inviscid_timestep();
 		compute_outer_residual();
 
-		if (counter == 0) outer_residual = 1.0;
+		if (counter == 0 || counter == 1) outer_residual = 1.0;
 		counter++;
 
 		if (counter % progress_update == 0) {
 			auto end = TIME;
 			DURATION duration = end - start;
-			cout << "Iteration: " << counter << "\t Residual: " << fixed << scientific << setprecision(3) << outer_residual
+			cout << "Iteration: " << counter << "\tResidual: " << fixed << scientific << setprecision(3) << outer_residual
 				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
 		}
 
-		if (counter % 500 == 0) {
-			cfd_real_contour(Nx, Ny, U, grid, cell_thermo, filename); 
+		if (counter % 100 == 0) {
+			// write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
 		}
 
 		t_tot += dt;
@@ -465,27 +452,19 @@ void Solver::solve_inviscid() {
 
 	}
 
-	cfd_real_contour(Nx, Ny, U, grid, cell_thermo, filename); 
+	// write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
 
 	auto end = TIME;
 	DURATION duration = end - start;
 	cout << "Program completed in " << duration.count() << " seconds." << endl;
 
 }
+
 void Solver::solve_inviscid_timestep() {
 
 	inner_residual = 1.0;
 
 	while (inner_residual >= 1e-8) {
-
-		get_ghost_cells();
-
-		if (chemical_eqbm_enabled) {
-			get_chemistry();
-		}
-		else {
-			get_perf_chemistry();
-		}
 
 		compute_inviscid_jacobians();
 
@@ -701,9 +680,9 @@ void Solver::solve_left_line_inviscid() {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
-	El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][Ny], grid.iNorms(i, Ny - 1));
+	Eb = inviscid_boundary_2D_E(BCs.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BCs.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	El = inviscid_boundary_2D_E(BCs.left, U[i + 1][Ny], grid.iNorms(i, Ny - 1));
 
 	// Top Boundary
 	A = grid.Volume(i, Ny - 1) / dt * identity(4)
@@ -727,7 +706,7 @@ void Solver::solve_left_line_inviscid() {
 	// Middle Boundry
 	for (int j = Ny - 2; j > 0; --j) {
 
-		El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][j + 1], grid.iNorms(i, j));
+		El = inviscid_boundary_2D_E(BCs.left, U[i + 1][j + 1], grid.iNorms(i, j));
 
 		B = (j_minus_inviscid_Jacobians[i][j + 1] - 0.5 * j_rho_A[i][j + 1]) * (grid.jArea(i, j + 1));
 
@@ -753,7 +732,7 @@ void Solver::solve_left_line_inviscid() {
 
 	//  Bottom boundary
 
-	El = inviscid_boundary_2D_E(BoundaryType.left, U[i + 1][1], grid.iNorms(i, 0));
+	El = inviscid_boundary_2D_E(BCs.left, U[i + 1][1], grid.iNorms(i, 0));
 
 	B = (j_minus_inviscid_Jacobians[i][1] - 0.5 * j_rho_A[i][1]) * (grid.jArea(i, 1));
 
@@ -794,8 +773,8 @@ void Solver::solve_middle_line_inviscid(const int i) {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	Eb = inviscid_boundary_2D_E(BCs.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BCs.top, U[i + 1][Ny], grid.jNorms(i, Ny));
 
 
 	// Top Boundary
@@ -889,9 +868,9 @@ void Solver::solve_right_line_inviscid() {
 	static Tensor g(Ny, Matrix(4, Vector(4)));
 
 	// Grab boundary values
-	Eb = inviscid_boundary_2D_E(BoundaryType.bottom, U[i + 1][1], grid.jNorms(i, 0));
-	Et = inviscid_boundary_2D_E(BoundaryType.top, U[i + 1][Ny], grid.jNorms(i, Ny));
-	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][Ny], grid.iNorms(i + 1, Ny - 1));
+	Eb = inviscid_boundary_2D_E(BCs.bottom, U[i + 1][1], grid.jNorms(i, 0));
+	Et = inviscid_boundary_2D_E(BCs.top, U[i + 1][Ny], grid.jNorms(i, Ny));
+	Er = inviscid_boundary_2D_E(BCs.right, U[i + 1][Ny], grid.iNorms(i + 1, Ny - 1));
 
 
 	// Top Boundary
@@ -916,7 +895,7 @@ void Solver::solve_right_line_inviscid() {
 	// Middle Boundry
 	for (int j = Ny - 2; j > 0; --j) {
 
-		Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][j + 1], grid.iNorms(i + 1, j));
+		Er = inviscid_boundary_2D_E(BCs.right, U[i + 1][j + 1], grid.iNorms(i + 1, j));
 
 		B = (j_minus_inviscid_Jacobians[i][j + 1] - 0.5 * j_rho_A[i][j + 1]) * (grid.jArea(i, j + 1));
 
@@ -940,7 +919,7 @@ void Solver::solve_right_line_inviscid() {
 	}
 
 	//  Bottom boundary
-	Er = inviscid_boundary_2D_E(BoundaryType.right, U[i + 1][1], grid.iNorms(i + 1, 0));
+	Er = inviscid_boundary_2D_E(BCs.right, U[i + 1][1], grid.iNorms(i + 1, 0));
 
 	B = (j_minus_inviscid_Jacobians[i][1] - 0.5 * j_rho_A[i][1]) * (grid.jArea(i, 1));
 
@@ -1047,7 +1026,6 @@ Vector Solver::minmod(Vector& a, Vector& b) {
 	return result;
 }
 
-
 void Solver::write_residual_csv() {
 
 	string filename = "RESIDUAL_PLOT.csv";
@@ -1061,6 +1039,203 @@ void Solver::write_residual_csv() {
 	cout << "\033[36mResidual File saved successfully as \"" << filename << "\"\033[0m" << endl;
 
 }
+
+void Solver::restart_solution(string& filename) {
+
+	ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Failed to open restart file." << endl;
+        return;
+    }
+
+    string line;
+	Tensor values(Nx, Matrix(Ny, Vector(4, 0.0)));
+
+    // Skip header lines
+    for (int i = 0; i < 3; ++i)	getline(file, line);
+
+	// Skip x and y vertices 
+	for (int k = 0; k < 2; ++k) {
+		for (int j = 0; j <= Ny; ++j) {
+			for (int i = 0; i <= Nx; ++i) {
+				getline(file, line);
+			}
+		}		
+	}
+
+	for (int var = 0; var < 4; ++var) {
+		for (int j = 0; j < Ny; ++j) {
+			for (int i = 0; i < Nx; ++i) {
+				double val;
+				file >> val;
+				values[i][j][var] = val;
+			}
+		}
+	}
+
+	for (int i = 0; i < Nx; ++i) {
+		for (int j = 0; j < Ny; ++j) {
+			U[i + 1][j + 1][0] = values[i][j][0];
+			U[i + 1][j + 1][1] = values[i][j][0] * values[i][j][1];
+			U[i + 1][j + 1][2] = values[i][j][0] * values[i][j][2];
+			U[i + 1][j + 1][3] = values[i][j][3];
+		}
+	}
+
+	file.close(); 
+}
+
+tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap> restart_solution(string& filename) { 
+
+	
+	ifstream file(filename);
+	if (!file.is_open()) {
+		cerr << "Failed to open restart file." << endl;
+		exit(1);
+	}
+	
+	string line, gridtype = "unknown";
+	int Nx, Ny; 
+	Vector U_inlet;
+	BCMap BCs(BCType::Undefined, BCType::Undefined, BCType::Undefined, BCType::Undefined);
+
+
+	// Go through header to find Nx and Ny
+	for (int k = 0; k < 3; ++k) {
+		getline(file, line);
+
+		if (line.find("ZONE") != string::npos) {
+			size_t posI = line.find("I=");
+			size_t posJ = line.find("J=");
+			if (posI != string::npos && posJ != string::npos) {
+				std::stringstream ssI(line.substr(posI + 2));
+				std::stringstream ssJ(line.substr(posJ + 2));
+				char comma;
+				ssI >> Nx >> comma;
+				ssJ >> Ny;
+				Nx -= 1;
+				Ny -= 1;
+			}
+		}
+	}
+
+	// Go through comments to find grid type, U_inlet, and BCs
+	while (getline(file, line)) {
+		if (line.find("# GRIDTYPE") != string::npos) {
+			size_t quote1 = line.find("\"");
+			size_t quote2 = line.find("\"", quote1 + 1);
+			if (quote1 != string::npos && quote2 != string::npos) {
+				gridtype = line.substr(quote1 + 1, quote2 - quote1 - 1);
+			}
+		}
+
+
+		if (line.find("# U_inlet") != string::npos) {
+			size_t eq = line.find("=");
+			if (eq != string::npos) {
+				string values = line.substr(eq + 1);
+				std::stringstream ss(values);
+				double val;
+				while (ss >> val) {
+					U_inlet.push_back(val);
+					if (ss.peek() == ',') ss.ignore();
+				}
+			}
+		}
+
+		if (line.find("# Left") != string::npos) {
+			string bc = line.substr(line.find('=') + 2);
+			BCs.left = stringToBCType(bc);
+		}
+		if (line.find("# Right") != string::npos) {
+			string bc = line.substr(line.find('=') + 2);
+			BCs.right = stringToBCType(bc);
+		}
+		if (line.find("# Bottom") != string::npos) {
+			string bc = line.substr(line.find('=') + 2);
+			BCs.bottom = stringToBCType(bc);
+		}
+		if (line.find("# Top") != string::npos) {
+			string bc = line.substr(line.find('=') + 2);
+			BCs.top = stringToBCType(bc);
+		}
+	}	
+
+	
+
+	file.close();
+
+	// Get grid object
+	unique_ptr<Grid> grid = find_grid(gridtype, Nx, Ny);
+
+	// Initialize tensor
+	Tensor U(Nx + 2, Matrix(Ny + 2, Vector(4, 0.0)));
+	Tensor values(Nx, Matrix(Ny, Vector(4, 0.0)));
+
+	// Reopen for field data
+	file.open(filename);
+	if (!file.is_open()) {
+		cerr << "Failed to reopen restart file." << endl;
+		exit(1);
+	}
+
+	// Skip first 4 lines
+	for (int i = 0; i < 10; ++i) getline(file, line);
+
+	// Skip vertex data (x and y)
+	for (int k = 0; k < 2; ++k) {
+		for (int j = 0; j <= Ny; ++j) {
+			for (int i = 0; i <= Nx; ++i) {
+				getline(file, line);
+			}
+		}
+	}
+
+	// Read primitive variables (density, u, v, E)
+	for (int var = 0; var < 4; ++var) {
+		for (int j = 0; j < Ny; ++j) {
+			for (int i = 0; i < Nx; ++i) {
+				double val;
+				file >> val;
+				values[i][j][var] = val;
+			}
+		}
+	}
+
+	// Convert to conservative variables
+	for (int i = 0; i < Nx; ++i) {
+		for (int j = 0; j < Ny; ++j) {
+			double rho = values[i][j][0];
+			double u   = values[i][j][1];
+			double v   = values[i][j][2];
+			double E   = values[i][j][3];
+
+			U[i + 1][j + 1][0] = rho;
+			U[i + 1][j + 1][1] = rho * u;
+			U[i + 1][j + 1][2] = rho * v;
+			U[i + 1][j + 1][3] = E;
+		}
+	}
+
+	file.close();
+	return make_tuple(Nx, Ny, U, move(grid), gridtype, U_inlet, BCs); 
+}
+
+unique_ptr<Grid> find_grid(string& gridname, int Nx, int Ny) {
+    if (gridname == "Ramp")
+        return make_unique<RampGrid>(Nx, Ny, 3, 1, 15);
+    else if (gridname == "Cylinder")
+        return make_unique<CylinderGrid>(Nx, Ny, 0.1, 0.3, 0.45, 0.0001, pi, 3 * pi / 2);
+    else if (gridname == "Plate")
+        return make_unique<FlatPlateGrid>(Nx, Ny, 1e-3, 1e-3, 5e-6);
+    else if (gridname == "Double")
+        return make_unique<DoubleConeGrid>(Nx, Ny, 1, 1, 1, 1, 15, -15, 1);
+    else if (gridname == "Mirror")
+        return make_unique<MirroredGrid>(Nx, Ny, 1, 1, 1, 2, 15, 30, 2.5);
+    else
+        throw std::invalid_argument("Unknown grid name: " + gridname);
+}
+
 
 
 //

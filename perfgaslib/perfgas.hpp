@@ -3,6 +3,7 @@
 #include "../writefilelib/writefile.hpp" 
 #include <chrono> 
 #include <iomanip>
+#include <tuple>
 
 #define TIME chrono::high_resolution_clock::now(); 
 #define DURATION chrono::duration<double> duration; 
@@ -17,54 +18,23 @@ constexpr double cv = R / (gam - 1);
 constexpr double cp = cv + R;
 constexpr double Pr = 0.71;
 
+inline double computeInternalEnergy(const Vector& U) {
+	double rho = U[0];
+	double KE = 0.5 * U[0] * ((U[1] * U[1]) / (rho * rho) + (U[2] * U[2]/(rho * rho)));
+	return (U[3] - KE)/rho;
+}
+
 // Inline function that computes pressure from state vector
 inline double computePressure(const Vector& U) {
-	return (gam - 1) * (U[3] - 0.5 * U[0] * (U[1] / U[0] * U[1] / U[0] + U[2] / U[0] * U[2] / U[0]));
+	double e = computeInternalEnergy(U); 
+	return (gam - 1) * U[0] * e;  
 }
 
 // Inline function that compuites Temperature from state vector
 inline double computeTemperature(const Vector& U) {
-	double p = computePressure(U);
-	return p / (U[0] * R);
+	double e = computeInternalEnergy(U);
+	return e / cv;
 }
-
-
-// This enum class is for setting boundary conditions types
-enum class BoundaryCondition {
-	IsothermalWall,
-	AdiabaticWall,
-	Inlet,
-	Outlet,
-	Symmetry,
-	Undefined
-};
-
-// This struct contains the boundary conditions types for each side of the grid (left, right, bottom, top) 
-struct BoundaryConditions {
-
-	BoundaryCondition left;
-	BoundaryCondition right;
-	BoundaryCondition bottom;
-	BoundaryCondition top;
-
-	BoundaryConditions(BoundaryCondition left, BoundaryCondition right, BoundaryCondition bottom, BoundaryCondition top) : left(left), right(right), bottom(bottom), top(top) {}
-
-};
-
-// This set boundary conditions based on text from the UI
-inline BoundaryCondition getBoundaryCondition(const string& input) {
-	if (input == "inlet") return BoundaryCondition::Inlet;
-	if (input == "outlet") return BoundaryCondition::Outlet;
-	if (input == "symmetry") return BoundaryCondition::Symmetry;
-	if (input == "adiabatic") return BoundaryCondition::AdiabaticWall;
-	if (input == "isothermal") return BoundaryCondition::IsothermalWall;
-	return BoundaryCondition::Undefined;
-}
-
-// This sets the inlet flow conditions from inputs in the UI
-struct inlet_conditions {
-	double rho, u, v, p, T, M, a;
-};
 
 // This struct contains the states for inviscid Jacobian computation
 struct Inviscid_State {
@@ -111,36 +81,40 @@ inline Viscous_State compute_viscous_state(const Vector& U, double nx, double ny
 Vector primtoCons(const Vector& V);
 Vector constoPrim(const Vector& U);
 
+tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap>  restart_solution(string& filename);  
+unique_ptr<Grid> find_grid(string& gridname, int Nx, int Ny);  
+
 class Solver {
 
 private:
 
-	string gridtype;
+	string gridtype, restart_name;
 
-	const int Nx, Ny, progress_update;
+	bool restart;
+	int Nx, Ny, progress_update;
 	double CFL, Tw, dt, inner_residual, t_tot, outer_residual;   
 
-	Vector V_inlet, U_inlet, Global_Residual, t, iteration;
-
+	Vector U_inlet, Global_Residual, t, iteration;
 	Tensor U, dU_new, dU_old, i_Fluxes, j_Fluxes;
 	Tesseract i_plus_inviscid_Jacobians, i_minus_inviscid_Jacobians, i_viscous_Jacobians, j_plus_inviscid_Jacobians, j_minus_inviscid_Jacobians, j_viscous_Jacobians;
 
-	Grid& grid;
-	BoundaryConditions BoundaryType;
+	Grid& grid; 
+	BCMap BCs; 
 	inlet_conditions INLET;
 
 
 public:
 
-	Solver(const int Nx, const int Ny, const inlet_conditions& INLET, Grid& grid, BoundaryConditions BoundaryType, double CFL, double Tw, int& progress_update);
+	Solver(int Nx, int Ny, Vector U_inlet, Grid& grid, string& gridtype, BCMap BCs, double CFL, double Tw,  
+		int& progress_update, bool& restart, string& restart_name, Tensor& U);
 
 	Vector constoViscPrim(const Vector& U);
 
-	Matrix inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, const Point& normals);
-	Vector inviscid_boundary_2D_U(BoundaryCondition type, const Vector& U, const Point& normals);
+	Matrix inviscid_boundary_2D_E(BCType type, const Vector& U, const Point& normals);
+	Vector inviscid_boundary_2D_U(BCType type, const Vector& U, const Point& normals);
 
-	Matrix viscous_boundary_2D_E(BoundaryCondition type, const Vector& U, const Point& normals);
-	Vector viscous_boundary_2D_U(BoundaryCondition type, const Vector& U, const Point& normals);
+	Matrix viscous_boundary_2D_E(BCType type, const Vector& U, const Point& normals);
+	Vector viscous_boundary_2D_U(BCType type, const Vector& U, const Point& normals);
 
 	void solve_inviscid();
 	void solve_viscous();
@@ -170,6 +144,4 @@ public:
 	void write_residual_csv();
 
 	Vector minmod(Vector& Ui, Vector& Uii);
-
-
 };

@@ -199,91 +199,67 @@ Matrix operator*(const Matrix& A, const Matrix& B) {
     return result;
 }
 
-///// Matrix - Vector LU division
 
-// Performs LU decomposition: A = LU
-void LUDecomposition(const Matrix& A, Matrix& L, Matrix& U) {
-
+// General LU decomposition with permutation matrix for partial pivoting //
+void LUDecomposition(const Matrix& A, Matrix& L, Matrix& U, vector<int>& P) {
     int n = A.size();
+    L = zeros(n, n);
+    U = A;
+    P.resize(n);
+    for (int i = 0; i < n; i++) P[i] = i;
 
-    L = zeros(A.size(), A[0].size());
-    U = zeros(A.size(), A[0].size());
 
     for (int i = 0; i < n; i++) {
-        L[i][i] = 1.0; // Diagonal of L is always 1
-
-        // Compute U
-        for (int j = i; j < n; j++) {
-            U[i][j] = A[i][j];
-            for (int k = 0; k < i; k++) {
-                U[i][j] -= L[i][k] * U[k][j];
+        // Pivot
+        double maxVal = std::abs(U[i][i]);
+        int pivot = i;
+        for (int j = i + 1; j < n; j++) {
+            if (std::abs(U[j][i]) > maxVal) {
+                maxVal = std::abs(U[j][i]);
+                pivot = j;
             }
         }
 
-        // Compute L
-        for (int j = i + 1; j < n; j++) {
-            if (U[i][i] == 0.0) {
-                throw std::runtime_error("Singular matrix detected! LU decomposition failed.");
-            }
-            L[j][i] = A[j][i];
+
+        if (pivot != i) {
+            std::swap(U[i], U[pivot]);
+            std::swap(P[i], P[pivot]);
             for (int k = 0; k < i; k++) {
-                L[j][i] -= L[j][k] * U[k][i];
+                std::swap(L[i][k], L[pivot][k]);
             }
-            L[j][i] /= U[i][i];
+        }
+
+
+        L[i][i] = 1.0;
+        for (int j = i + 1; j < n; j++) {
+            if (U[i][i] == 0.0)
+                throw std::runtime_error("Singular matrix detected!");
+
+
+            double factor = U[j][i] / U[i][i];
+            L[j][i] = factor;
+            for (int k = i; k < n; k++) {
+                U[j][k] -= factor * U[i][k];
+            }
         }
     }
 }
 
-// Solves Ly = B using forward substitution
-Vector forwardSubstitution(const Matrix& L, const Vector& B) {
-
-    int n = L.size();
-    Vector Y = zeros(n);
-
+// Matrix - Matrix "division" //
+Matrix applyPermutation(const Matrix& B, const vector<int>& P) {
+    int n = P.size();
+    int m = B[0].size();
+    Matrix Pb(n, Vector(m));
     for (int i = 0; i < n; i++) {
-        Y[i] = B[i];
-        for (int j = 0; j < i; j++) {
-            Y[i] -= L[i][j] * Y[j];
-        }
+        Pb[i] = B[P[i]];
     }
-    return Y;
+    return Pb;
 }
-
-// Solves Ux = Y using backward substitution
-Vector backwardSubstitution(const Matrix& U, const Vector& Y) {
-    int n = U.size();
-    Vector X = zeros(n);
-
-    for (int i = n - 1; i >= 0; i--) {
-        if (U[i][i] == 0.0) {
-            throw std::runtime_error("Singular matrix detected in back-substitution.");
-        }
-        X[i] = Y[i];
-        for (int j = i + 1; j < n; j++) {
-            X[i] -= U[i][j] * X[j];
-        }
-        X[i] /= U[i][i];
-    }
-    return X;
-}
-
-// Solves AX = B using LU decomposition (overloaded operator)
-Vector operator/(const Vector& B, const Matrix& A) {
-
-    Matrix L, U;
-    LUDecomposition(A, L, U);
-    Vector Y = forwardSubstitution(L, B);
-    return backwardSubstitution(U, Y);
-}
-
-
-////// Matrix - Matrix LU division
-
-// Solves Ly = B using forward substitution
 Matrix forwardSubstitution(const Matrix& L, const Matrix& B) {
     int n = L.size();
     int m = B[0].size(); // Number of right-hand sides
     Matrix Y = zeros(n, m);
+
 
     for (int i = 0; i < n; i++) {
         for (int col = 0; col < m; col++) {
@@ -295,12 +271,11 @@ Matrix forwardSubstitution(const Matrix& L, const Matrix& B) {
     }
     return Y;
 }
-
-// Solves Ux = Y using backward substitution
 Matrix backwardSubstitution(const Matrix& U, const Matrix& Y) {
     int n = U.size();
     int m = Y[0].size();
     Matrix X = zeros(n, m);
+
 
     for (int i = n - 1; i >= 0; i--) {
         for (int col = 0; col < m; col++) {
@@ -316,12 +291,58 @@ Matrix backwardSubstitution(const Matrix& U, const Matrix& Y) {
     }
     return X;
 }
-
-// Solves AX = B using LU decomposition (overloaded operator)
 Matrix operator/(const Matrix& B, const Matrix& A) {
 
+
     Matrix L, U;
-    LUDecomposition(A, L, U);
-    Matrix Y = forwardSubstitution(L, B);
+    std::vector<int> P;
+
+
+    LUDecomposition(A, L, U, P);          // Pivoting version
+    Matrix Pb = applyPermutation(B, P);   // Permute right-hand sides
+    Matrix Y = forwardSubstitution(L, Pb);
+    return backwardSubstitution(U, Y);
+}
+
+
+// Matrix - Vector "division" //
+Vector forwardSubstitution(const Matrix& L, const Vector& B) {
+    int n = L.size();
+    Vector Y(n);
+    for (int i = 0; i < n; i++) {
+        Y[i] = B[i];
+        for (int j = 0; j < i; j++) {
+            Y[i] -= L[i][j] * Y[j];
+        }
+    }
+    return Y;
+}
+Vector backwardSubstitution(const Matrix& U, const Vector& Y) {
+    int n = U.size();
+    Vector X(n);
+    for (int i = n - 1; i >= 0; i--) {
+        if (U[i][i] == 0.0)
+            throw std::runtime_error("Singular matrix in back-substitution.");
+        X[i] = Y[i];
+        for (int j = i + 1; j < n; j++) {
+            X[i] -= U[i][j] * X[j];
+        }
+        X[i] /= U[i][i];
+    }
+    return X;
+}
+Vector applyPermutation(const Vector& B, const vector<int>& P) {
+    int n = B.size();
+    Vector out(n);
+    for (int i = 0; i < n; i++)
+        out[i] = B[P[i]];
+    return out;
+}
+Vector operator/(const Vector& B, const Matrix& A) {
+    Matrix L, U;
+    std::vector<int> P;
+    LUDecomposition(A, L, U, P);
+    Vector Pb = applyPermutation(B, P);
+    Vector Y = forwardSubstitution(L, Pb);
     return backwardSubstitution(U, Y);
 }

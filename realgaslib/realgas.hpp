@@ -41,31 +41,6 @@ inline double computeSoundSpeed(ThermoEntry& Thermo) {
 	return sqrt(Thermo.gamma * Thermo.R * Thermo.T);
 }
 
-enum class BoundaryCondition {
-	IsothermalWall,
-	AdiabaticWall,
-	Inlet,
-	Outlet,
-	Symmetry,
-	Undefined
-};
-
-struct BoundaryConditions {
-
-	BoundaryCondition left;
-	BoundaryCondition right;
-	BoundaryCondition bottom;
-	BoundaryCondition top;
-
-	BoundaryConditions(BoundaryCondition left, BoundaryCondition right, BoundaryCondition bottom, BoundaryCondition top) : left(left), right(right), bottom(bottom), top(top) {}
-
-};
-
-// This sets the inlet flow conditions from inputs in the UI
-struct inlet_conditions {
-	double rho, u, v, p, T, M, a;
-};
-
 // This struct contains the states for inviscid Jacobian computation
 struct Inviscid_State {
 	double rho, u, v, p, a, k, uprime, pp, pe, h0;
@@ -89,7 +64,6 @@ inline Inviscid_State compute_inviscid_state(const Vector& U, ThermoEntry& therm
 }
 
 // This set boundary conditions based on text from the UI
-inline BoundaryCondition getBoundaryCondition(const string& input);
 vector<vector<ThermoEntry>> load_csv(const string& filename);
 int find_index(double target, double min, double max, int n);
 ThermoEntry bilinear_interpolate(
@@ -101,36 +75,40 @@ vector<double> custom_rho_spacing();
 Vector primtoCons(const Vector& V, double gam);
 Vector constoPrim(const Vector& U, double gam);
 
+unique_ptr<Grid> find_grid(string& gridname, int Nx, int Ny) ; 
+tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap> restart_solution(string& filename);
+
 class Solver {
 
 private:
 
-	string gridtype;
+	string gridtype, restart_name;
 
+	bool chemical_eqbm_enabled, restart; 
 	const int Nx, Ny, progress_update;
 	double CFL, Tw, dt, inner_residual, t_tot;
 
 	Vector V_inlet, U_inlet, Global_Residual, t, iteration, rho_vec;
-	vector<vector<ThermoEntry>> chem_lookup_table;
-	vector<vector<ThermoEntry>> cell_thermo;
+	vector<vector<ThermoEntry>> chem_lookup_table, cell_thermo;
 	Tensor U, dU_new, dU_old, i_Fluxes, j_Fluxes, i_rho_fluxes, j_rho_fluxes;
 	Tesseract i_plus_inviscid_Jacobians, i_minus_inviscid_Jacobians, i_viscous_Jacobians, j_plus_inviscid_Jacobians, j_minus_inviscid_Jacobians, j_viscous_Jacobians, i_rho_A, j_rho_A;
 
 	Grid& grid;
-	BoundaryConditions BoundaryType;
+	BCMap BCs;  
 	inlet_conditions INLET;
-	bool chemical_eqbm_enabled;
+
 
 
 public:
 
 	double outer_residual;
 
-	Solver(const int Nx, const int Ny, const inlet_conditions& INLET, Grid& grid, BoundaryConditions BoundaryType, double CFL, double Tw, int& progress_update, bool& chemical_eqbm_enabled);
+	Solver(const int Nx, const int Ny, Vector U_inlet, Grid& grid, string& gridtype, BCMap BCs,  
+		double CFL, double Tw, int& progress_update, bool& restart, string& restart_name, bool& chemical_eqbm_enabled, Tensor& U);
 
 
-	Matrix inviscid_boundary_2D_E(BoundaryCondition type, const Vector& U, const Point& normals);
-	Vector inviscid_boundary_2D_U(BoundaryCondition type, const Vector& U, const Point& normals);
+	Matrix inviscid_boundary_2D_E(BCType type, const Vector& U, const Point& normals);
+	Vector inviscid_boundary_2D_U(BCType type, const Vector& U, const Point& normals);
 
 
 	void get_chemistry();
@@ -141,6 +119,7 @@ public:
 	void solve_inviscid();
 	void solve_inviscid_timestep();
 
+	void restart_solution(string& filename); 
 
 	void compute_inviscid_jacobians();
 	void solve_left_line_inviscid();

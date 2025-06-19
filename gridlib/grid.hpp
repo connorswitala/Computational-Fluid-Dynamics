@@ -6,6 +6,34 @@
  
 using namespace std;
 
+// This enum class is for setting boundary conditions types
+enum class BCType {
+	IsothermalWall,
+	AdiabaticWall,
+	Inlet,
+	Outlet,
+	Symmetry,
+	Undefined
+};
+
+// This struct contains the boundary conditions types for each side of the grid (left, right, bottom, top) 
+struct BCMap {
+
+	BCType left;
+	BCType right;
+	BCType bottom;
+	BCType top;
+
+	BCMap(BCType left, BCType right, BCType bottom, BCType top) : left(left), right(right), bottom(bottom), top(top) {}
+
+};
+
+// This sets the inlet flow conditions from inputs in the UI
+struct inlet_conditions {
+	double rho, u, v, p, T, M, a;
+};
+
+
 struct Point {
     double x;
     double y;

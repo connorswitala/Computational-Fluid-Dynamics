@@ -3,152 +3,92 @@
 
 using namespace std;
 
-
-int main() {
+int main(int argc, char* argv[]) {
 
 	// IMPORTANT:  Due to how this code is set up, you can change Nx (number of cells in 'x' direction) and Ny (number of cells in 'y' direction) in the 
 	// 2D FVS Library.h file. It should be right at the top. 
 
-	auto start = TIME;
+	auto start = TIME;				// For timing the solution
 
-	int Nx_holder, Ny_holder;
+	bool restart = false; 
+	string restart_name = "";
+	string gridtype;   
+	unique_ptr<Grid> gridg; 
 
-	double l1, l2, l3, l4, l5, R1, R2, R3, theta1, theta2, d_min;
-	int progress_update;
+	int Nx, Ny, progress_update = 50;
+	double CFL = 1.0, Wall_Temp = 50;
 
-	double Wall_Temp = 300; // For Isothermal Wall boundary condition only (viscous solver). 
-	double CFL; // Pretty much only works at 1.0
+	inlet_conditions INLET; 
 
-	inlet_conditions INLET;
-	unique_ptr<Grid> gridg;
+	INLET.p = 66.2970,							// Inlet Pressure (SET)
+	INLET.T = 231,							// Inlet Temperature (SET)
+	INLET.M = 17.9,							// Inlet Mach speed (SET)
+	INLET.a = sqrt(gam * R * INLET.T),		// Inlet Sound Speed
+	INLET.u = INLET.M * INLET.a,			// Inlet u-velocity
+	INLET.v = 0,							// Inlet v-velocity
+	INLET.rho = 0.001;						// Inlet density  
+	// INLET.rho = INLET.p/(R * INLET.T);
 
-	string solver_type, grid_type, leftBC, rightBC, bottomBC, topBC, preset;
+	Vector V_inlet = {INLET.rho, INLET.u, INLET.v, INLET.p};
+	Vector U_inlet = primtoCons(V_inlet);
 
-	cout << "\033[36mRun the preset solver or enter your own (type 'preset' to solve defaule mirrored ramp grid, or 'set' to set your own grid, boundary conditions, and flow properties): \033[0m"; cin >> preset; cout << endl;
+	if (argc == 1) {
 
-	while (preset != "preset" && preset != "set") {
-		cout << "\033[36mUnknown entry. Type 'preset' for preset or 'set' for set your own: \033[0m"; cin >> preset; cout << endl;
-	}
-
-
-	if (preset == "set") {
-
-		cout << "\033[36m'viscous' or 'inviscid' solver: \033[0m";	cin >> solver_type; cout << endl;
-
-		while (solver_type != "viscous" && solver_type != "inviscid") {
-			cout << "\033[36mUnknown solver type. Type 'viscous' for preset or 'inviscid' for set your own: \033[0m"; cin >> preset; cout << endl;
-		}
-
-		cout << "\033[36mGrid type (enter 'ramp' for ramp, 'cylinder' for cylinder, 'plate' for flat plate, 'double' for double ramp, \n 'mirrored' for double ramp that is mirrored above x-axis): \033[0m";	cin >> grid_type; cout << endl;
-
-		while (grid_type != "ramp" && grid_type != "cylinder" && grid_type != "plate" && grid_type != "double" && grid_type != "mirrored") {
-			cout << "\033[36mUnknown grid type. Please choose either 'ramp' 'cylinder' 'plate' or 'double': \033[0m"; cin >> grid_type; cout << endl;
-		}
-
-		cout << "\033[36mNumber of cells in x-direction: \033[0m"; cin >> Nx_holder; cout << "\033[36mNumber of cells in y-direction: \033[0m"; cin >> Ny_holder;
-
-		const int Nx = Nx_holder, Ny = Ny_holder;
-
-		cout << "\033[36mCFL (try to keep at or below 5.0): \033[0m";	cin >> CFL; cout << endl;
-
-		if (grid_type == "ramp") {
-			cout << "\033[31mLength: \033[0m"; cin >> l1;
-			cout << "\033[31mDomain height: \033[0m"; cin >> l2; cout << "\033[31mRamp angle (in degrees): \033[0m"; cin >> theta1;
-			gridg = make_unique<RampGrid>(Nx, Ny, l1, l2, theta1);
-		}
-
-		if (grid_type == "cylinder") {
-			cout << "\033[31mCylinder radius: \033[0m"; cin >> R1;  cout << "\033[31mMinimum grid radius: \033[0m"; cin >> R2; cout << "\033[31mMaximum grid radius: \033[0m"; cin >> R3; cout << "\033[31mMinumum cell thickness: \033[0m"; cin >> d_min;
-			gridg = make_unique<CylinderGrid>(Nx, Ny, R1, R2, R3, d_min, pi / 2, 3 * pi / 2);
-		}
-
-		if (grid_type == "plate") {
-			cout << "\033[31mx-length: \033[0m"; cin >> l1;  cout << "\033[31my-length: \033[0m"; cin >> l2; cout << "\033[31mMinimum cell thickness: \033[0m"; cin >> d_min;
-			gridg = make_unique<FlatPlateGrid>(Nx, Ny, l1, l2, d_min);
-		}
-
-		if (grid_type == "double") {
-			cout << "\033[31mInlet section length: \033[0m"; cin >> l1;  cout << "\033[31mFirst ramp section length: \033[0m"; cin >> l2; cout << "\033[31mSecond ramp section length: \033[0m"; cin >> l3; cout << "\033[31mOutlet section length: \033[0m"; cin >> l4;
-			cout << "\033[31mInlet section height: \033[0m"; cin >> l5; cout << "\033[31mFirst ramp angle (in degrees): \033[0m"; cin >> theta1; cout << "\033[31mSecond ramp angle (in degrees): \033[0m"; cin >> theta2;
-			gridg = make_unique<DoubleConeGrid>(Nx, Ny, l1, l2, l3, l4, theta1, theta2, l5);
-		}
-
-		if (grid_type == "mirrored") {
-			cout << "\033[31mInlet section length: \033[0m"; cin >> l1;  cout << "\033[31mFirst ramp section length: \033[0m"; cin >> l2; cout << "\033[31mSecond ramp section length: \033[0m"; cin >> l3; cout << "\033[31mOutlet section length: \033[0m"; cin >> l4;
-			cout << "\033[31mInlet section height: \033[0m"; cin >> l5; cout << "\033[31mFirst ramp angle (in degrees): \033[0m"; cin >> theta1; cout << "\033[31mSecond ramp angle (in degrees): \033[0m"; cin >> theta2;
-			gridg = make_unique<MirroredGrid>(Nx, Ny, l1, l2, l3, l4, theta1, theta2, l5);
-		}
-
-		cout << endl << "\033[32mAvailable boundary conditions are: 'inlet', 'outlet', 'symmetry', 'adiabatic wall', 'isothermal wall' \nNOTE: isothermal and adiabatic are only necessary for the viscous solver" << endl << endl << "Left boundary condition: \033[0m";	cin >> leftBC;
-		cout << "\033[32mRight boundary condition: \033[0m";	cin >> rightBC;
-		cout << "\033[32mBottom boundary condition: \033[0m";	cin >> bottomBC;
-		cout << "\033[32mTop boundary condition: \033[0m"; cin >> topBC;
+		progress_update = 50;		// For displaying stats
+		Wall_Temp = 300; 		// For Isothermal Wall boundary condition only (viscous solver). 
+		CFL = 1.0; 				// Pretty much only works at 1.0
+		Nx = 400, Ny = 200; 
 
 
-		cout << endl << "\033[35mInput flow properties : \033[0m" << endl << "\033[35mPressure: \033[0m"; cin >> INLET.p;
-		cout << "\033[35mTemperature: \033[0m"; cin >> INLET.T;	cout << "\033[35mMach: \033[0m"; cin >> INLET.M;
-
-
-		cout << "\033[35mWall Temperature (only for isothermal wall boundary condition, enter any number if not necessary): \033[0m"; cin >> Wall_Temp; cout << endl;
-		cout << "\033[36mAfter how many iterations do you want to see a status update: \033[0m"; cin >> progress_update; cout << endl;
-
-		INLET.a = sqrt(gam * R * INLET.T),	// Inlet Sound Speed
-			INLET.u = INLET.M * INLET.a,			// Inlet u-velocity
-			INLET.v = 0,							// Inlet v-velocity
-			INLET.rho = INLET.p / (R * INLET.T);	// Inlet density
-
-		BoundaryConditions BCs(getBoundaryCondition(leftBC), getBoundaryCondition(rightBC), getBoundaryCondition(bottomBC), getBoundaryCondition(topBC));
-
-		// Sets up the solver class with inlet and boundary conditions, grid type, CFL, wall temperature, and the iteration number for progress     
-		Solver solver(Nx, Ny, INLET, *gridg, BCs, CFL, Wall_Temp, progress_update);
-
-		// Calls solver type ( use -> solver.solve_viscous() if you want viscous solver)
-		if (solver_type == "inviscid") solver.solve_inviscid();         
-		else solver.solve_viscous();
-	}
-
-	else if (preset == "preset") {
+		// BCMap BCs(BCType::Inlet, BCType::Outlet, BCType::Symmetry, BCType::Symmetry);      
+		// gridg = make_unique<RampGrid>(Nx, Ny, 3, 0.66, 15);   
 	
 
-		INLET.p = 900.0,							// Inlet Pressure (SET)
-			INLET.T = 226.15,						// Inlet Temperature (SET)
-			INLET.M = 20,							// Inlet Mach speed (SET)
-			INLET.a = sqrt(gam * R * INLET.T),		// Inlet Sound Speed
-			INLET.u = INLET.M * INLET.a,			// Inlet u-velocity
-			INLET.v = 0,							// Inlet v-velocity
-			INLET.rho = 0.01388;					// Inlet density
-			// INLET.rho = INLET.p/(R * INLET.T);
+		BCMap BCs(BCType::Outlet, BCType::Symmetry, BCType::Symmetry, BCType::Inlet);   
+		gridg = make_unique<CylinderGrid>(Nx, Ny, 0.1, 0.3, 0.45, 0.0001, pi, 3 * pi / 2);
 
-		int progress_update = 50;  // This number prints a status update after the number of iterations declared here. 
-		const int Nx = 200, Ny = 100;
-		CFL = 1.0; 
-		// BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry);     
-		// RampGrid grid(Nx, Ny, 3, 3, 20);  
+		Tensor U = Tensor(Nx + 2, Matrix(Ny + 2, Vector(4, 0.0))); 
 
-		BoundaryConditions BCs(BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry, BoundaryCondition::Inlet);
-		CylinderGrid grid(Nx, Ny, 0.1, 0.3, 0.45, 0.001, pi, 3 * pi / 2);
+		
+		if (dynamic_cast<RampGrid*>(gridg.get())) gridtype = "Ramp";
+		else if (dynamic_cast<CylinderGrid*>(gridg.get())) gridtype = "Cylinder";
+		else if (dynamic_cast<FlatPlateGrid*>(gridg.get())) gridtype = "Plate";
+		else if (dynamic_cast<DoubleConeGrid*>(gridg.get())) gridtype = "Double";
+		else if (dynamic_cast<MirroredGrid*>(gridg.get())) gridtype = "Mirrored";
+		else gridtype = "Unknown"; 
 
-		//BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::IsothermalWall, BoundaryCondition::Symmetry);   
-		//FlatPlateGrid grid(Nx, Ny, 1e-3, 1e-3, 5e-6);  
+		for (int i = 0; i < Nx + 2; ++i) {
+			for (int j = 0; j < Ny + 2; ++j) {
+				U[i][j] = U_inlet;
+			}
+		}
 
-		//BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry);  
-		//DoubleConeGrid grid(Nx, Ny, 1, 1, 1, 1, 25, 50, 2.5);  
-
-		//BoundaryConditions BCs(BoundaryCondition::Inlet, BoundaryCondition::Outlet, BoundaryCondition::Symmetry, BoundaryCondition::Symmetry);   
-		//MirroredGrid grid(Nx, Ny, 1, 1, 1, 2, 15, 30, 2.5);   
-
-
-		// Sets up the solver class with inlet and boundary conditions, grid type, CFL, wall temperature, and the iteration number for progress     
-		Solver solver(Nx, Ny, INLET, grid, BCs, CFL, Wall_Temp, progress_update);
-
-		// Calls solver type ( use -> solver.solve_viscous() if you want viscous solver)
-		solver.solve_inviscid();
-
-
+		Solver solver(Nx, Ny, U_inlet, *gridg, gridtype, BCs, CFL, Wall_Temp, progress_update, restart, restart_name, U);
+		solver.solve_inviscid();  
 	}
+	if (argc == 2) {
 
-	else {
-		cout << "Unknown solver type";
+		restart = true;
+		restart_name = "../plotfiles/PGI_" + string(argv[1]) + ".dat"; 
+		auto [Nx, Ny, U, grid_ptr, gridname, U_inlet, BCs] = restart_solution(restart_name);
+		Grid& grid = *grid_ptr;
+
+
+		Solver solver(Nx, Ny, U_inlet, grid, gridname, BCs, CFL, Wall_Temp, progress_update, restart, restart_name, U);
+		solver.solve_inviscid();
+	}
+	if (argc == 3) {
+
+		progress_update = stoi(argv[2]); 
+		restart = true;
+		restart_name = "../plotfiles/PGI_" + string(argv[1]) + ".dat"; 
+		cout << restart_name << endl;
+		auto [Nx, Ny, U, grid_ptr, gridname, U_inlet, BCs] = restart_solution(restart_name);
+		Grid& grid = *grid_ptr;
+
+
+		Solver solver(Nx, Ny, U_inlet, grid, gridname, BCs, CFL, Wall_Temp, progress_update, restart, restart_name, U);
+		solver.solve_inviscid();
 	}
 
 	return 0;

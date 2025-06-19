@@ -403,7 +403,7 @@ public:
 
 	}
 
-	Vector compute_equilibrium(double Rho, double E, Vector& initial_mol) {
+	Vector compute_equilibrium_table(double Rho, double E, Vector& initial_mol) {
 
 		double sum = 0.0;
 		R_mix = 0.0;
@@ -432,16 +432,10 @@ public:
 		rho = Rho;
 		e = E;
 		T = e / 717;
+			if (e > 1e7) T = 20000; 	
 		p = rho * R_mix * T;  // Initial pressure estimate	  
 
 		compute_temperature();
-		// Vector mass_fractions(11); 
-
-		// for (int i = 0; i < n_species; ++i) {
-		// 	mass_fractions[i] = Xk[i]; // Store mass fractions    
-		// } 
-		// mass_fractions[10] = T; // Store temperature  
-
 		gam = 1 + R_mix / cv_mix;
 		Vector thermo = { rho, e, p, T, R_mix, cv_mix, gam, 0.0, 0.0 }; 
 
@@ -483,6 +477,52 @@ public:
 
 		return thermo;
 	}
+	pair<Vector, Vector> compute_equilibrium_fractions(double Rho, double E, Vector& initial_mol) {
+
+		double sum = 0.0;
+		R_mix = 0.0;
+		initial_moles.total = 0.0;
+
+		initial_moles.N2 = initial_mol[0];
+		initial_moles.O2 = initial_mol[1];
+		initial_moles.NO = initial_mol[2];
+		initial_moles.N = initial_mol[3];
+		initial_moles.O = initial_mol[4];
+		initial_moles.Ar = initial_mol[5];
+		initial_moles.Arp = initial_mol[6];
+		initial_moles.Np = initial_mol[7];
+		initial_moles.Op = initial_mol[8];
+		initial_moles.em = initial_mol[9];
+
+
+		for (int i = 0; i < n_species; ++i) {
+			initial_moles.total += initial_mol[i];
+			sum += initial_mol[i] * MW[i];
+		}
+
+		R_mix = Ru / sum; // Mixture gas constant    
+
+
+		rho = Rho;
+		e = E;
+		T = e / 717;
+		if (e > 1e7) T = 20000; 
+		p = rho * R_mix * T;  // Initial pressure estimate	  
+
+		compute_temperature();
+		Vector mass_fractions(11), molar_fractions(11);  
+
+		for (int i = 0; i < n_species; ++i) {
+			molar_fractions[i] = Xk[i]; // Store mass fractions 
+			mass_fractions[i] = Yk[i];    
+		} 
+
+		mass_fractions[10] = T; // Store temperature   
+		molar_fractions[10] = T;
+				
+
+		return make_pair(mass_fractions, molar_fractions); 
+	} 
 };
 
 void display_entries(ThermoEntry& thermo) {
@@ -497,8 +537,8 @@ void display_entries(ThermoEntry& thermo) {
 	cout << "dpde: " << thermo.dpde << endl;
 }
 
-int main() {
-
+void write_thermochemical_table() {
+	
 	int n = 400;
 
 	Vector e(n); 
@@ -511,7 +551,7 @@ int main() {
 	Chemistry chem; 
 	Vector mass_fractions;  
 	Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0 };  
-	ofstream file("thermochemical_table.csv"); 
+	ofstream file("../plotfiles/thermochemical_table.csv"); 
 	file << "rho, e, p, T, R, cv, gam, dpdrho, dpde" << endl; // Header for the CSV file   
 	Tensor thermo(n, Matrix(n, Vector(9)));  
 
@@ -520,7 +560,7 @@ int main() {
 
 			
 			try {
-				thermo[i][j] = chem.compute_equilibrium(rho[i], e[j], initial_moles); 
+				thermo[i][j] = chem.compute_equilibrium_table(rho[i], e[j], initial_moles); 
 					// ... write line
 			} catch (const exception& ex) {
 				cerr << "Error at i=" << i << ", j=" << j << ": " << ex.what() << endl;
@@ -531,9 +571,61 @@ int main() {
 		}
 		cout << i * n << endl; 
 	}
-
-
 	
 	file.close(); 
+}
+void write_fractions() {
+    double rho = 0.1, T = 0;
+    double e;
+    int counter = 0;
+
+    Chemistry chem;
+    Vector maf(11), mof(11);
+    Vector initial_moles = { 0.7808, 0.2095, 0.0, 0.0, 0.0, 0.0097, 0.0, 0.0, 0.0, 0.0 };
+
+    ofstream mass("../plotfiles/mass_fractions.dat");
+	ofstream molar("../plotfiles/molar_fractions.dat");
+
+    // Write Tecplot Header
+    mass << "TITLE = \"Equilibrium Fractions vs Temperature\"\n";
+    mass << "VARIABLES = \"T\", \"N2\", \"O2\", \"NO\", \"N\", \"O\", \"Ar\", \"Ar+\", \"N+\", \"O+\", \"e-\"\n";
+    mass << "ZONE T=\"Equilibrium Data\", F=POINT\n";
+
+	molar << "TITLE = \"Equilibrium Fractions vs Temperature\"\n";
+    molar << "VARIABLES = \"T\", \"N2\", \"O2\", \"NO\", \"N\", \"O\", \"Ar\", \"Ar+\", \"N+\", \"O+\", \"e-\"\n";
+    molar << "ZONE T=\"Equilibrium Data\", F=POINT\n";
+
+    while (T <= 20000) {
+        e = 717 * 500 + 80000 * counter;
+
+        try {
+            auto result = chem.compute_equilibrium_fractions(rho, e, initial_moles);
+            maf = result.first;
+            mof = result.second;
+        } catch (const exception& ex) {
+            cerr << "Error at i=" << counter << ": " << ex.what() << endl;
+            break;
+        }
+
+        mass << maf[10]; // Temperature
+		molar << mof[10]; // Temperature
+        for (int i = 0; i < 10; ++i) mass << " " << maf[i];  // Mass fractions 
+        for (int i = 0; i < 10; ++i) molar << " " << mof[i];  // Molar fractions 
+        mass << "\n";
+		molar << "\n";
+
+        counter++;
+        T = maf[10];  // Assuming maf[10] is temperature
+    }
+
+    mass.close();
+	molar.close();
+}
+
+
+int main() {
+
+	write_fractions(); 
+
 	return 0;
 }

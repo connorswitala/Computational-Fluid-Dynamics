@@ -2,7 +2,6 @@
 #include "grid.hpp" 
 
 
-
 double NewtonMethod(double max_dist, int n_points, double d_min) {
 	double k = 1, k_new = 1 / 2, ratio = fabs(k - k_new);
 	double func, func_prime;
@@ -39,6 +38,19 @@ RampGrid::RampGrid(int Nx, int Ny, double L, double inlet_height, double ramp_an
 		double ramp_end_y = slope * ramp_length;  // height at end of ramp
 
 		for (int i = 0; i <= Nx; ++i) {
+			for (int j = 0; j <= Ny; ++j) {
+				double x = i * dx;
+				vertices[i][j].x = x; 
+				if ( (x < ramp_start_x) && (x + dx > ramp_start_x) ) ramp_start_x = x;
+				if ( (x < ramp_end_x) && (x + dx > ramp_end_x) ) {
+					ramp_end_x = x;
+					ramp_length = ramp_end_x - ramp_start_x;
+					ramp_end_y = slope * ramp_length;
+				}
+			}
+		}
+
+		for (int i = 0; i <= Nx; ++i) {
 			double x = i * dx;
 			double y_bot, y_top;
 
@@ -57,18 +69,7 @@ RampGrid::RampGrid(int Nx, int Ny, double L, double inlet_height, double ramp_an
 				
 				double frac = static_cast<double>(j) / Ny;
 				
-				vertices[i][j].x = x; 
 				vertices[i][j].y = y_bot + frac * (y_top - y_bot);
-
-				if ( (x < L / 3.0) && (x + dx > L / 3.0) ) { 
-					vertices[i][j].x = ramp_start_x; 
-					vertices[i][j].y = ramp_start_y + frac * (y_top - ramp_start_y); 
-				}
-
-				if ( (x < 2 * L / 3.0) && (x + dx > 2 * L / 3.0) ) {
-					vertices[i][j].x = ramp_end_x; 
-					vertices[i][j].y = ramp_end_y + frac * (y_top - ramp_end_y); 
-				}
 				
 			}
 		}

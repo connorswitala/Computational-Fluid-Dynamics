@@ -21,7 +21,7 @@ of .csv files that can be used to plot the molar / mass fractions of each specie
 ## Perfect Gas Solver
 
 You can run the program solve_perf_gas with up to two extra inputs. './solve_perf_gas' will run the hard coded grid, boundary conditions, and inlet conditions that you set in ../perfgassolver/main.cpp.
-'./solve_perf_gas 400x200Ramp' will restart the file previously saved as '../plotfiles/PGI_400x200Ramp.dat'. #you do not need to type in the 'PGI_' or '.dat', as this is already added. (PGI stands for 
+'./solve_perf_gas 400x200Ramp' will restart the file previously saved as '../plotfiles/PGI_400x200Ramp.dat'. You do not need to type in the 'PGI_' or '.dat', as this is already added. (PGI stands for 
 Perfect Gas Inviscid, its not set up for viscous yet). Finally, './solve_perf_gas 400x200Ramp 50' will restart the 400x200 Ramp solution wwhile printing updates every 50 time steps. As stated, all of these
 methods output a .dat file for plotting in Tecplot or Matlab. (Probably Paraview as well, but I haven't tried it.)
 

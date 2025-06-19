@@ -35,8 +35,7 @@ Vector convert(const Vector& U);
 Vector convert_real(const Vector& U, ThermoEntry thermo);
 
 void write_perf_data(const int Nx, const int Ny, Tensor& U, Vector& U_inlet, Grid& grid, BCMap& BCs, string& gridtype, string filename);
-
-
 void write_real_data(const int Nx, const int Ny, Tensor& U, Vector U_inlet, Grid& grid, BCMap& BCs, string& gridtype, vector<vector<ThermoEntry>>& cell_thermo, string filename); 
+
 void cfd_centerline(const int Nx, const int Ny, Tensor& U, Grid& grid, string filename);
 void output_grid(Grid& grid, const int& Nx, const int& Ny, string& filename);

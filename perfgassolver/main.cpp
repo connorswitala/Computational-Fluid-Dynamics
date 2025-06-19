@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 		progress_update = 50;		// For displaying stats
 		Wall_Temp = 300; 		// For Isothermal Wall boundary condition only (viscous solver). 
 		CFL = 1.0; 				// Pretty much only works at 1.0
-		Nx = 400, Ny = 200; 
+		Nx = 200, Ny = 100; 
 
 
 		// BCMap BCs(BCType::Inlet, BCType::Outlet, BCType::Symmetry, BCType::Symmetry);      

@@ -191,6 +191,7 @@ void write_real_data(const int Nx, const int Ny, Tensor& U, Vector U_inlet, Grid
     file << "# Right  = " << BCTypeToString(BCs.right)  << "\n";
     file << "# Bottom = " << BCTypeToString(BCs.bottom) << "\n";
     file << "# Top    = " << BCTypeToString(BCs.top)    << "\n";
+    
      // Write x values
     for (int j = 0; j <= Ny; ++j) {
         for (int i = 0; i <= Nx; ++i) {
@@ -285,7 +286,6 @@ void write_real_data(const int Nx, const int Ny, Tensor& U, Vector U_inlet, Grid
 
     file.close(); 
 }
-
 
 void cfd_centerline(const int Nx, const int Ny, Tensor& U, Grid& grid, string filename) {
 

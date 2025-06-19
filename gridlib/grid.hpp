@@ -3,6 +3,7 @@
 #include "../linalglib/linalg.hpp" 
 #include <fstream> 
 #include <cmath> 
+ #include <memory>
  
 using namespace std;
 

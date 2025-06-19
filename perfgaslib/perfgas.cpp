@@ -308,8 +308,10 @@ void Solver::compute_ghost_cells() {
 
 void Solver::solve_inviscid() {
 
-	cout << "\033[33mRunning Inviscid DPLR for " << Nx << " by " << Ny << " " << gridtype << " with a CFL of " << fixed << setprecision(2) << CFL << "...\033[0m" << "\n\n";
 	string filename = "../plotfiles/PGI_" + to_string(Nx) + "x" + to_string(Ny) + gridtype + ".dat"; 
+	if (restart) cout << "\033[33mRestarting Inviscid DPLR from " << filename << "...\033[0m" << "\n\n";
+	cout << "\033[33mRunning Inviscid DPLR for a " << Nx << " by " << Ny << " " << gridtype << "...\033[0m" << "\n\n";
+	
 
 	auto start = TIME;
 	int counter = 0;
@@ -335,9 +337,23 @@ void Solver::solve_inviscid() {
 		if (counter % progress_update == 0) {
 			auto end = TIME;
 			DURATION duration = end - start;
-			cout << "Iteration: " << counter << "\t Residual: " << fixed << scientific << setprecision(3) << outer_residual
-				<< "\t dt = " << fixed << scientific << setprecision(3) << dt << fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
+
+			if (counter % 1000 == 0) {
+				cout << "\033[32m"; // Set text to green
+			}
+
+			cout << "Iteration: " << counter
+				<< "\tResidual: " << fixed << scientific << setprecision(3) << outer_residual
+				<< "\tdt: " << fixed << scientific << setprecision(5) << dt
+				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds";
+
+			if (counter % 1000 == 0) {
+				cout << "\033[0m"; // Reset text color
+			}
+
+			cout << endl;
 		}
+
 
 		if (counter % 1000 == 0) {
 			write_perf_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, filename);  

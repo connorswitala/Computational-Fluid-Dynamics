@@ -177,7 +177,7 @@ Solver::Solver(const int Nx, const int Ny, Vector U_inlet, Grid& grid, string& g
 	progress_update(progress_update), restart(restart), restart_name(restart_name), chemical_eqbm_enabled(chemical_eqbm_enabled),
 	U(U) {
 
-	V_inlet = Vector(4); U_inlet = Vector(4);
+
 	dU_new = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 	dU_old = Tensor(Nx, Matrix(Ny, Vector(4, 0.0)));
 
@@ -400,8 +400,9 @@ void Solver::compute_dt() {
 
 void Solver::solve_inviscid() {
 
-	cout << "\033[33mRunning Inviscid Chemical Equilibrium DPLR for " << Nx << " by " << Ny << " " << gridtype << " with a CFL of " << fixed << setprecision(2) << CFL << "...\033[0m" << "\n\n";
-	string filename = "../plotfiles/CEI_" + to_string(Nx) + "x" + to_string(Ny) + gridtype + ".dat"; 
+	string filename = "../plotfiles/CEI_" + to_string(Nx) + "x" + to_string(Ny) + gridtype + ".dat";  
+	if (restart) cout << "\033[33mRestarting Inviscid Chemical Equilibrium DPLR from " << filename << "...\033[0m" << "\n\n";
+	else cout << "\033[33mRunning Inviscid Chemical Equilibrium DPLR for a " << Nx << " by " << Ny << " " << gridtype << "...\033[0m" << "\n\n";
 
 	auto start = TIME;
 	int counter = 0;
@@ -410,11 +411,7 @@ void Solver::solve_inviscid() {
 
 	t.push_back(0.0);
 	iteration.push_back(0.0);
-	Global_Residual.push_back(10.0);
-	write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
-	
-
-	get_ghost_cells(); 
+	Global_Residual.push_back(10.0);	
 
 	while (outer_residual >= 1e-6) {
 
@@ -437,12 +434,26 @@ void Solver::solve_inviscid() {
 		if (counter % progress_update == 0) {
 			auto end = TIME;
 			DURATION duration = end - start;
-			cout << "Iteration: " << counter << "\tResidual: " << fixed << scientific << setprecision(3) << outer_residual
-				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds" << endl;
+
+			if (counter % 1000 == 0) {
+				cout << "\033[32m"; // Set text to green
+			}
+
+			cout << "Iteration: " << counter
+				<< "\tResidual: " << fixed << scientific << setprecision(3) << outer_residual
+				<< "\tdt: " << fixed << scientific << setprecision(5) << dt
+				<< fixed << setprecision(2) << "\tElapsed time: " << duration.count() << " seconds";
+
+			if (counter % 1000 == 0) {
+				cout << "\033[0m"; // Reset text color
+			}
+
+			cout << endl;
 		}
 
+
 		if (counter % 100 == 0) {
-			// write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
+			write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
 		}
 
 		t_tot += dt;
@@ -452,7 +463,7 @@ void Solver::solve_inviscid() {
 
 	}
 
-	// write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
+	write_real_data(Nx, Ny, U, U_inlet, grid, BCs, gridtype, cell_thermo, filename); 
 
 	auto end = TIME;
 	DURATION duration = end - start;
@@ -1040,51 +1051,6 @@ void Solver::write_residual_csv() {
 
 }
 
-void Solver::restart_solution(string& filename) {
-
-	ifstream file(filename);
-    if (!file.is_open()) {
-        cerr << "Failed to open restart file." << endl;
-        return;
-    }
-
-    string line;
-	Tensor values(Nx, Matrix(Ny, Vector(4, 0.0)));
-
-    // Skip header lines
-    for (int i = 0; i < 3; ++i)	getline(file, line);
-
-	// Skip x and y vertices 
-	for (int k = 0; k < 2; ++k) {
-		for (int j = 0; j <= Ny; ++j) {
-			for (int i = 0; i <= Nx; ++i) {
-				getline(file, line);
-			}
-		}		
-	}
-
-	for (int var = 0; var < 4; ++var) {
-		for (int j = 0; j < Ny; ++j) {
-			for (int i = 0; i < Nx; ++i) {
-				double val;
-				file >> val;
-				values[i][j][var] = val;
-			}
-		}
-	}
-
-	for (int i = 0; i < Nx; ++i) {
-		for (int j = 0; j < Ny; ++j) {
-			U[i + 1][j + 1][0] = values[i][j][0];
-			U[i + 1][j + 1][1] = values[i][j][0] * values[i][j][1];
-			U[i + 1][j + 1][2] = values[i][j][0] * values[i][j][2];
-			U[i + 1][j + 1][3] = values[i][j][3];
-		}
-	}
-
-	file.close(); 
-}
-
 tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap> restart_solution(string& filename) { 
 
 	
@@ -1164,12 +1130,12 @@ tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap> restart_solutio
 	
 
 	file.close();
-
 	// Get grid object
 	unique_ptr<Grid> grid = find_grid(gridtype, Nx, Ny);
 
 	// Initialize tensor
-	Tensor U(Nx + 2, Matrix(Ny + 2, Vector(4, 0.0)));
+	Tensor U(Nx + 2, Matrix(Ny + 2, U_inlet));
+
 	Tensor values(Nx, Matrix(Ny, Vector(4, 0.0)));
 
 	// Reopen for field data
@@ -1220,10 +1186,9 @@ tuple<int, int, Tensor, unique_ptr<Grid>, string, Vector, BCMap> restart_solutio
 	file.close();
 	return make_tuple(Nx, Ny, U, move(grid), gridtype, U_inlet, BCs); 
 }
-
 unique_ptr<Grid> find_grid(string& gridname, int Nx, int Ny) {
     if (gridname == "Ramp")
-        return make_unique<RampGrid>(Nx, Ny, 3, 1, 15);
+        return make_unique<RampGrid>(Nx, Ny, 3, 0.66, 15);
     else if (gridname == "Cylinder")
         return make_unique<CylinderGrid>(Nx, Ny, 0.1, 0.3, 0.45, 0.0001, pi, 3 * pi / 2);
     else if (gridname == "Plate")

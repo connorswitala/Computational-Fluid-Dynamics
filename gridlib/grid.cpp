@@ -2,6 +2,7 @@
 #include "grid.hpp" 
 
 
+
 double NewtonMethod(double max_dist, int n_points, double d_min) {
 	double k = 1, k_new = 1 / 2, ratio = fabs(k - k_new);
 	double func, func_prime;
@@ -29,7 +30,7 @@ RampGrid::RampGrid(int Nx, int Ny, double L, double inlet_height, double ramp_an
 
 		int i,j;
 		double dx = L / Nx;
-		double theta_rad = ramp_angle * M_PI / 180.0;
+		double theta_rad = ramp_angle * 3.141592653 / 180.0;
 		double slope = tan(theta_rad);
 		double ramp_start_x = L / 3.0;
 		double ramp_start_y = 0.0; 

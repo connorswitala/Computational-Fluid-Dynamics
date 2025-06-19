@@ -21,7 +21,6 @@ constexpr double perfgam = 1.4;
 constexpr double perfR = 287.0;
 
 ThermoEntry operator*(const double& s, const ThermoEntry& A);
-
 ThermoEntry operator+(const ThermoEntry& A, const ThermoEntry& B);
 
 
@@ -88,7 +87,7 @@ private:
 	const int Nx, Ny, progress_update;
 	double CFL, Tw, dt, inner_residual, t_tot;
 
-	Vector V_inlet, U_inlet, Global_Residual, t, iteration, rho_vec;
+	Vector U_inlet, Global_Residual, t, iteration, rho_vec;
 	vector<vector<ThermoEntry>> chem_lookup_table, cell_thermo;
 	Tensor U, dU_new, dU_old, i_Fluxes, j_Fluxes, i_rho_fluxes, j_rho_fluxes;
 	Tesseract i_plus_inviscid_Jacobians, i_minus_inviscid_Jacobians, i_viscous_Jacobians, j_plus_inviscid_Jacobians, j_minus_inviscid_Jacobians, j_viscous_Jacobians, i_rho_A, j_rho_A;
@@ -96,8 +95,6 @@ private:
 	Grid& grid;
 	BCMap BCs;  
 	inlet_conditions INLET;
-
-
 
 public:
 
@@ -119,8 +116,6 @@ public:
 	void solve_inviscid();
 	void solve_inviscid_timestep();
 
-	void restart_solution(string& filename); 
-
 	void compute_inviscid_jacobians();
 	void solve_left_line_inviscid();
 	void solve_middle_line_inviscid(const int i);
@@ -131,16 +126,6 @@ public:
 
 	void write_residual_csv();
 
-
-	void time(void (Solver::* func)()) {
-		auto start = TIME;
-
-		(this->*func)();
-
-		auto end = TIME;
-		DURATION duration = end - start;
-		cout << "Time taken: " << duration.count() << endl;
-	}
 	Vector minmod(Vector& a, Vector& b);
 
 	//Vector constoViscPrim(const Vector& U, ThermoEntry& Thermo);
